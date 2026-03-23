@@ -5,6 +5,7 @@ export default defineConfig({
   title: 'Pocket Senior',
   description: '출퇴근길에 읽는 백엔드 미니북',
   base: '/pocket-senior/',
+  appearance: 'dark',
   cleanUrls: true,
   head: [
     ['link', { rel: 'preconnect', href: 'https://cdn.jsdelivr.net' }],

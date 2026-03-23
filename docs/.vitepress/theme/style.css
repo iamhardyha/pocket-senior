@@ -1,0 +1,113 @@
+/* ── Fonts ── */
+:root {
+  --vp-font-family-base: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ── Dark Purple Palette ── */
+.dark {
+  --vp-c-bg: #0d0b1a;
+  --vp-c-bg-alt: #141225;
+  --vp-c-bg-elv: #1a1730;
+  --vp-c-bg-soft: #1e1b33;
+
+  --vp-c-text-1: #e8e4f0;
+  --vp-c-text-2: #b8b0cc;
+  --vp-c-text-3: #8a80a4;
+
+  --vp-c-brand-1: #a78bfa;
+  --vp-c-brand-2: #8b5cf6;
+  --vp-c-brand-3: #7c3aed;
+  --vp-c-brand-soft: rgba(167, 139, 250, 0.14);
+
+  --vp-c-border: #2a2545;
+  --vp-c-divider: #2a2545;
+  --vp-c-gutter: #1a1730;
+
+  --vp-code-block-bg: #13111f;
+
+  --vp-sidebar-bg-color: #0d0b1a;
+  --vp-nav-bg-color: #0d0b1a;
+}
+
+/* ── Force Dark Mode ── */
+html {
+  color-scheme: dark;
+}
+
+/* ── Typography ── */
+.vp-doc {
+  line-height: 1.85;
+}
+
+.vp-doc h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h2 {
+  font-size: 1.4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--vp-c-border);
+}
+
+/* ── Blockquote Styling ── */
+.vp-doc blockquote {
+  background: var(--vp-c-bg-soft);
+  border-left: 4px solid var(--vp-c-brand-1);
+  border-radius: 0 8px 8px 0;
+  padding: 1rem 1.25rem;
+}
+
+/* ── Code Block ── */
+.vp-doc div[class*='language-'] {
+  border-radius: 12px;
+  border: 1px solid var(--vp-c-border);
+}
+
+/* ── Table Styling ── */
+.vp-doc table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.vp-doc tr {
+  border-color: var(--vp-c-border);
+}
+
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-brand-1);
+}
+
+/* ── Sidebar Active Item ── */
+.VPSidebarItem.is-active > .item .link > .text {
+  color: var(--vp-c-brand-1);
+}
+
+/* ── Category Card ── */
+.category-card {
+  background: var(--vp-c-bg-elv);
+  border: 1px solid var(--vp-c-border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: border-color 0.3s, transform 0.2s;
+}
+
+.category-card:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+}
+
+/* ── Mobile Optimization ── */
+@media (max-width: 768px) {
+  .vp-doc {
+    font-size: 15px;
+    line-height: 1.9;
+  }
+
+  .vp-doc h1 {
+    font-size: 1.6rem;
+  }
+}
