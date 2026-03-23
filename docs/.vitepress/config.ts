@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import sidebar from './sidebar.json'
 
 export default defineConfig({
   title: 'Pocket Senior',
@@ -10,6 +11,7 @@ export default defineConfig({
     ['link', { rel: 'stylesheet', href: 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css' }],
   ],
   themeConfig: {
+    sidebar,
     search: {
       provider: 'local',
     },

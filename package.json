@@ -7,8 +7,9 @@
     "doc": "docs"
   },
   "scripts": {
-    "dev": "vitepress dev docs",
-    "build": "vitepress build docs",
+    "gen:sidebar": "npx tsx scripts/gen-sidebar.ts",
+    "dev": "npm run gen:sidebar && vitepress dev docs",
+    "build": "npm run gen:sidebar && vitepress build docs",
     "preview": "vitepress preview docs"
   },
   "repository": {
@@ -24,6 +25,7 @@
   },
   "homepage": "https://github.com/iamhardyha/pocket-senior#readme",
   "devDependencies": {
+    "tsx": "^4.21.0",
     "vitepress": "^1.6.4"
   }
 }
