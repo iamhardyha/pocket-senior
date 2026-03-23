@@ -27,12 +27,40 @@
   --vp-code-block-bg: #13111f;
 
   --vp-sidebar-bg-color: #0d0b1a;
-  --vp-nav-bg-color: #0d0b1a;
+  --vp-nav-bg-color: rgba(13, 11, 26, 0.85);
 }
 
 /* ── Force Dark Mode ── */
 html {
   color-scheme: dark;
+}
+
+/* ── Nav blur effect ── */
+.VPNav {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.VPNavBar {
+  border-bottom: 1px solid var(--vp-c-border) !important;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vp-c-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vp-c-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vp-c-brand-3);
 }
 
 /* ── Typography ── */
@@ -44,6 +72,10 @@ html {
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #e8e4f0, #a78bfa);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .vp-doc h2 {
@@ -52,24 +84,35 @@ html {
   border-top: 1px solid var(--vp-c-border);
 }
 
-/* ── Blockquote Styling ── */
+.vp-doc h3 {
+  color: var(--vp-c-brand-1);
+}
+
+/* ── Blockquote — 핵심 질문 styling ── */
 .vp-doc blockquote {
-  background: var(--vp-c-bg-soft);
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.08), rgba(124, 58, 237, 0.04));
   border-left: 4px solid var(--vp-c-brand-1);
-  border-radius: 0 8px 8px 0;
-  padding: 1rem 1.25rem;
+  border-radius: 0 12px 12px 0;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 12px rgba(167, 139, 250, 0.06);
 }
 
 /* ── Code Block ── */
 .vp-doc div[class*='language-'] {
   border-radius: 12px;
   border: 1px solid var(--vp-c-border);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.vp-doc [class*='language-'] code {
+  font-size: 0.875rem;
 }
 
 /* ── Table Styling ── */
 .vp-doc table {
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
 .vp-doc tr {
@@ -79,25 +122,139 @@ html {
 .vp-doc th {
   background: var(--vp-c-bg-soft);
   color: var(--vp-c-brand-1);
+  font-weight: 600;
 }
 
-/* ── Sidebar Active Item ── */
+.vp-doc td {
+  background: var(--vp-c-bg-alt);
+}
+
+/* ── Inline code ── */
+.vp-doc :not(pre) > code {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: var(--vp-c-brand-1);
+  font-size: 0.875em;
+}
+
+/* ── Links ── */
+.vp-doc a {
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.vp-doc a:hover {
+  border-bottom-color: var(--vp-c-brand-1);
+}
+
+/* ── Sidebar ── */
+.VPSidebar {
+  border-right: 1px solid var(--vp-c-border) !important;
+}
+
 .VPSidebarItem.is-active > .item .link > .text {
   color: var(--vp-c-brand-1);
 }
 
-/* ── Category Card ── */
-.category-card {
-  background: var(--vp-c-bg-elv);
-  border: 1px solid var(--vp-c-border);
-  border-radius: 16px;
-  padding: 1.5rem;
-  transition: border-color 0.3s, transform 0.2s;
+.VPSidebarItem .item .link:hover .text {
+  color: var(--vp-c-brand-1);
 }
 
-.category-card:hover {
+/* ── Horizontal Rule ── */
+.vp-doc hr {
+  border-color: var(--vp-c-border);
+  opacity: 0.5;
+}
+
+/* ── Strong text in doc ── */
+.vp-doc strong {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+}
+
+/* ── Category index page styles ── */
+.category-index {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.category-index h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(135deg, #e8e4f0, #a78bfa);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.category-index > p:first-of-type {
+  color: var(--vp-c-text-3);
+  font-size: 1rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--vp-c-border);
+}
+
+.note-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.note-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-decoration: none;
+  background: var(--vp-c-bg-elv);
+  border: 1px solid var(--vp-c-border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  transition: border-color 0.3s, transform 0.2s, box-shadow 0.3s;
+}
+
+.note-card:hover {
   border-color: var(--vp-c-brand-1);
-  transform: translateY(-2px);
+  transform: translateX(4px);
+  box-shadow: 0 4px 20px rgba(167, 139, 250, 0.1);
+}
+
+.note-card .note-number {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.note-card .note-title {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--vp-c-text-1);
+}
+
+.note-card .note-arrow {
+  margin-left: auto;
+  color: var(--vp-c-text-3);
+  font-size: 0.9rem;
+  transition: transform 0.2s, color 0.2s;
+}
+
+.note-card:hover .note-arrow {
+  transform: translateX(3px);
+  color: var(--vp-c-brand-1);
 }
 
 /* ── Mobile Optimization ── */
@@ -109,5 +266,13 @@ html {
 
   .vp-doc h1 {
     font-size: 1.6rem;
+  }
+
+  .note-card {
+    padding: 1rem 1.25rem;
+  }
+
+  .category-index {
+    padding: 1.5rem 1rem 3rem;
   }
 }
