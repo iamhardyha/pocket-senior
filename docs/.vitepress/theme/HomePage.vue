@@ -13,7 +13,7 @@ const categories: readonly Category[] = [
   { title: '데이터 정합성 & 동시성', desc: '락, 멱등성, 무결성, 정합성 설계', link: '/pocket-senior/concurrency/', icon: '🔒', count: 5, gradient: 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(167,139,250,0.08))' },
   { title: '장애 시나리오', desc: 'Redis, DB, 외부 API 장애 대응', link: '/pocket-senior/failure/', icon: '🛡️', count: 6, gradient: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(167,139,250,0.08))' },
   { title: '데이터베이스', desc: 'N+1, 쿼리 튜닝, 트랜잭션, 샤딩', link: '/pocket-senior/database/', icon: '🗄️', count: 7, gradient: 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(167,139,250,0.08))' },
-  { title: '아키텍처 & 비동기', desc: 'MSA, Kafka, 이벤트 드리븐', link: '/pocket-senior/architecture/', icon: '🏗️', count: 3, gradient: 'linear-gradient(135deg, rgba(168,85,247,0.12), rgba(167,139,250,0.08))' },
+  { title: '아키텍처 & 비동기', desc: 'MSA, Kafka, 메시지큐, 분산 트랜잭션', link: '/pocket-senior/architecture/', icon: '🏗️', count: 5, gradient: 'linear-gradient(135deg, rgba(168,85,247,0.12), rgba(167,139,250,0.08))' },
   { title: '인프라 & 마이그레이션', desc: 'JDK 마이그레이션, 네트워크', link: '/pocket-senior/infra/', icon: '⚙️', count: 2, gradient: 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(167,139,250,0.08))' },
 ]
 
