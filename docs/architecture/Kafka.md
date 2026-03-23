@@ -224,8 +224,8 @@ inventory.decreased
 
 ## 관련 노트
 
-- [MSA와-메시지큐](./architecture/MSA와-메시지큐.md) — 메시지큐 선택 기준
-- [이벤트-리스너-vs-비동기](./architecture/이벤트-리스너-vs-비동기.md) — 비동기 패턴
-- [선착순-쿠폰-유실-대응](./failure/선착순-쿠폰-유실-대응.md) — Kafka 기반 선착순 시스템
-- [멱등성](./concurrency/멱등성.md) — Consumer 멱등성
-- [트랜잭션-관리](./database/트랜잭션-관리.md) — Outbox 패턴
+- [MSA와-메시지큐](./MSA와-메시지큐.md) — 메시지큐 선택 기준
+- [이벤트-리스너-vs-비동기](./이벤트-리스너-vs-비동기.md) — 비동기 패턴
+- [선착순-쿠폰-유실-대응](../failure/선착순-쿠폰-유실-대응.md) — Kafka 기반 선착순 시스템
+- [멱등성](../concurrency/멱등성.md) — Consumer 멱등성
+- [트랜잭션-관리](../database/트랜잭션-관리.md) — Outbox 패턴

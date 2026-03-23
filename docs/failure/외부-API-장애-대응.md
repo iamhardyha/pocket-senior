@@ -342,7 +342,7 @@ public CompletableFuture<PaymentResponse> pay(PaymentRequest request) {
 
 ## 관련 노트
 
-- [도메인-병목-관리](./failure/도메인-병목-관리.md) — 외부 서비스가 병목일 때
-- [스파이크-트래픽-대처](./traffic/스파이크-트래픽-대처.md) — Circuit Breaker, Bulkhead 개요
-- [멱등성](./concurrency/멱등성.md) — Retry 시 멱등성 필수
-- [장애-대응-전략](./traffic/장애-대응-전략.md) — 전체 장애 대응 프로세스
+- [도메인-병목-관리](./도메인-병목-관리.md) — 외부 서비스가 병목일 때
+- [스파이크-트래픽-대처](../traffic/스파이크-트래픽-대처.md) — Circuit Breaker, Bulkhead 개요
+- [멱등성](../concurrency/멱등성.md) — Retry 시 멱등성 필수
+- [장애-대응-전략](../traffic/장애-대응-전략.md) — 전체 장애 대응 프로세스

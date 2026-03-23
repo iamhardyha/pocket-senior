@@ -169,6 +169,6 @@ Aurora 스토리지: 6개 복제본 (3 AZ)
 
 ## 관련 노트
 
-- [글로벌-서비스-DB-마이그레이션](./database/글로벌-서비스-DB-마이그레이션.md) — 마이그레이션 전략
-- [샤딩과-레플리카](./database/샤딩과-레플리카.md) — Replica 구성
-- [DB-장애-대응](./failure/DB-장애-대응.md) — Aurora Failover 동작
+- [글로벌-서비스-DB-마이그레이션](./글로벌-서비스-DB-마이그레이션.md) — 마이그레이션 전략
+- [샤딩과-레플리카](./샤딩과-레플리카.md) — Replica 구성
+- [DB-장애-대응](../failure/DB-장애-대응.md) — Aurora Failover 동작

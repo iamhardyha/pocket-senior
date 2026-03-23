@@ -198,6 +198,6 @@ mysqldump → 새 DB에 import
 
 ## 관련 노트
 
-- [Aurora-업그레이드](./database/Aurora-업그레이드.md) — Aurora 전환 상세
-- [샤딩과-레플리카](./database/샤딩과-레플리카.md) — Replication 기반 마이그레이션
-- [DB-장애-대응](./failure/DB-장애-대응.md) — 마이그레이션 중 장애 대응
+- [Aurora-업그레이드](./Aurora-업그레이드.md) — Aurora 전환 상세
+- [샤딩과-레플리카](./샤딩과-레플리카.md) — Replication 기반 마이그레이션
+- [DB-장애-대응](../failure/DB-장애-대응.md) — 마이그레이션 중 장애 대응

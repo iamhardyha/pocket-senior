@@ -148,11 +148,11 @@ LB가 Registry 역할 겸임 (AWS ALB, Kubernetes Service)
 
 ### Saga 패턴
 
-→ [트랜잭션-관리](./database/트랜잭션-관리.md)에서 상세 다룸
+→ [트랜잭션-관리](../database/트랜잭션-관리.md)에서 상세 다룸
 
 ### Outbox 패턴
 
-→ [트랜잭션-관리](./database/트랜잭션-관리.md)에서 상세 다룸
+→ [트랜잭션-관리](../database/트랜잭션-관리.md)에서 상세 다룸
 
 ---
 
@@ -181,7 +181,7 @@ LB가 Registry 역할 겸임 (AWS ALB, Kubernetes Service)
 
 ## 관련 노트
 
-- [Kafka](./architecture/Kafka.md) — Kafka 상세
-- [이벤트-리스너-vs-비동기](./architecture/이벤트-리스너-vs-비동기.md) — 비동기 패턴 선택
-- [트랜잭션-관리](./database/트랜잭션-관리.md) — Saga, Outbox 패턴
-- [도메인-병목-관리](./failure/도메인-병목-관리.md) — MSA 환경 병목
+- [Kafka](./Kafka.md) — Kafka 상세
+- [이벤트-리스너-vs-비동기](./이벤트-리스너-vs-비동기.md) — 비동기 패턴 선택
+- [트랜잭션-관리](../database/트랜잭션-관리.md) — Saga, Outbox 패턴
+- [도메인-병목-관리](../failure/도메인-병목-관리.md) — MSA 환경 병목

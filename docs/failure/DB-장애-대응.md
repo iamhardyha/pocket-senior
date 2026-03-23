@@ -107,7 +107,7 @@ Primary 장애 → MHA Manager 감지 → 최신 Replica 선택 → 승격 + VIP
 | MHA | 10~30초 | 최소화 | 중간 |
 | Aurora | 30초 이내 | 없음 (공유 스토리지) | 낮음 |
 
-→ [Aurora-업그레이드](./database/Aurora-업그레이드.md)에서 Aurora 상세 다룸
+→ [Aurora-업그레이드](../database/Aurora-업그레이드.md)에서 Aurora 상세 다룸
 
 ---
 
@@ -300,9 +300,9 @@ Aurora라면:
 
 ## 관련 노트
 
-- [레디스-장애-대응](./failure/레디스-장애-대응.md) — DB 장애 시 캐시 의존도
-- [도메인-병목-관리](./failure/도메인-병목-관리.md) — DB 병목이 전체에 미치는 영향
-- [Aurora-업그레이드](./database/Aurora-업그레이드.md) — Aurora 고가용성 상세
-- [샤딩과-레플리카](./database/샤딩과-레플리카.md) — 분산 DB 구성
-- [쿼리-최적화-튜닝](./database/쿼리-최적화-튜닝.md) — Slow Query 예방
-- [트랜잭션-관리](./database/트랜잭션-관리.md) — 트랜잭션과 Lock 경합
+- [레디스-장애-대응](./레디스-장애-대응.md) — DB 장애 시 캐시 의존도
+- [도메인-병목-관리](./도메인-병목-관리.md) — DB 병목이 전체에 미치는 영향
+- [Aurora-업그레이드](../database/Aurora-업그레이드.md) — Aurora 고가용성 상세
+- [샤딩과-레플리카](../database/샤딩과-레플리카.md) — 분산 DB 구성
+- [쿼리-최적화-튜닝](../database/쿼리-최적화-튜닝.md) — Slow Query 예방
+- [트랜잭션-관리](../database/트랜잭션-관리.md) — 트랜잭션과 Lock 경합

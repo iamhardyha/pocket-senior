@@ -197,5 +197,5 @@ Spring Boot 2.x + JDK 8
 
 ## 관련 노트
 
-- [트랜잭션-관리](./database/트랜잭션-관리.md) — Jakarta 전환이 JPA에 미치는 영향
-- [대용량-트래픽-대응](./traffic/대용량-트래픽-대응.md) — Virtual Thread로 처리량 개선
+- [트랜잭션-관리](../database/트랜잭션-관리.md) — Jakarta 전환이 JPA에 미치는 영향
+- [대용량-트래픽-대응](../traffic/대용량-트래픽-대응.md) — Virtual Thread로 처리량 개선

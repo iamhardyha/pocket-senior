@@ -157,5 +157,5 @@ PRODUCT#P100        | REVIEW#2026-03-20   | { rating: 5, comment: "좋아요" }
 
 ## 관련 노트
 
-- [샤딩과-레플리카](./database/샤딩과-레플리카.md) — DynamoDB의 내부 파티셔닝과 샤딩 개념
-- [쿼리-최적화-튜닝](./database/쿼리-최적화-튜닝.md) — RDB vs NoSQL 쿼리 패턴 차이
+- [샤딩과-레플리카](./샤딩과-레플리카.md) — DynamoDB의 내부 파티셔닝과 샤딩 개념
+- [쿼리-최적화-튜닝](./쿼리-최적화-튜닝.md) — RDB vs NoSQL 쿼리 패턴 차이
