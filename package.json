@@ -1,0 +1,29 @@
+{
+  "name": "my-complex",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "vitepress dev docs",
+    "build": "vitepress build docs",
+    "preview": "vitepress preview docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iamhardyha/pocket-senior.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/iamhardyha/pocket-senior/issues"
+  },
+  "homepage": "https://github.com/iamhardyha/pocket-senior#readme",
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}
