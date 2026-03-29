@@ -44,6 +44,11 @@ N+1, 쿼리 튜닝, 트랜잭션, 샤딩 등 DB 최적화와 운영
     <span class="note-title">글로벌 서비스 운영 중 DB 마이그레이션</span>
     <span class="note-arrow">→</span>
   </a>
+  <a href="./CDC.html" class="note-card">
+    <span class="note-number">08</span>
+    <span class="note-title">CDC (Change Data Capture)</span>
+    <span class="note-arrow">→</span>
+  </a>
 </div>
 
 </div>
