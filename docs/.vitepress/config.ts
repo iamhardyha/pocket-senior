@@ -13,6 +13,10 @@ export default defineConfig({
   ],
   themeConfig: {
     sidebar,
+    nav: [
+      { text: '전체 목록', link: '/00-질문목록' },
+      { text: '업데이트 내역', link: '/changelog' },
+    ],
     search: {
       provider: 'local',
     },

@@ -45,6 +45,13 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
       </div>
     </section>
 
+    <a href="/pocket-senior/changelog.html" class="recent-update">
+      <span class="update-dot" />
+      <span class="update-label">최근 업데이트</span>
+      <span class="update-text">WebSocket, 커넥션 풀 타임아웃, 대용량 스트리밍 + 전체 30개 노트 교정</span>
+      <span class="update-more">더보기 →</span>
+    </a>
+
     <section class="categories-section">
       <div class="section-header">
         <h2 class="section-title">카테고리</h2>
@@ -69,16 +76,6 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
       </div>
     </section>
 
-    <section class="changelog-banner">
-      <a href="/pocket-senior/changelog.html" class="banner-link">
-        <span class="banner-icon">&#x1f4dd;</span>
-        <div class="banner-text">
-          <span class="banner-title">업데이트 내역</span>
-          <span class="banner-desc">새 노트 추가와 교정 이력을 확인하세요</span>
-        </div>
-        <span class="banner-arrow">→</span>
-      </a>
-    </section>
   </div>
 </template>
 
@@ -319,63 +316,82 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
   .home-container {
     padding: 0 1rem 3rem;
   }
+
+  .recent-update {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .update-more {
+    margin-left: 0;
+  }
 }
 
-.changelog-banner {
-  margin-top: 2rem;
-  position: relative;
-  z-index: 1;
-}
-
-.banner-link {
+/* ── Recent Update Banner ── */
+.recent-update {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.65rem;
   text-decoration: none;
-  background: linear-gradient(135deg, rgba(167, 139, 250, 0.06), rgba(124, 58, 237, 0.03));
-  border: 1px solid var(--vp-c-border);
-  border-radius: 12px;
-  padding: 1.1rem 1.5rem;
-  transition: border-color 0.3s, transform 0.2s, box-shadow 0.3s;
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.06), rgba(167, 139, 250, 0.04));
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 10px;
+  padding: 0.7rem 1.1rem;
+  margin-bottom: 1.5rem;
+  position: relative;
+  z-index: 1;
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
 
-.banner-link:hover {
+.recent-update:hover {
   border-color: var(--vp-c-brand-1);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(167, 139, 250, 0.1);
+  box-shadow: 0 2px 16px rgba(167, 139, 250, 0.08);
 }
 
-.banner-icon {
-  font-size: 1.5rem;
+.update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  flex-shrink: 0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+}
+
+.update-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
   flex-shrink: 0;
 }
 
-.banner-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
+.update-text {
+  font-size: 0.82rem;
+  color: var(--vp-c-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.banner-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--vp-c-text-1);
-}
-
-.banner-desc {
-  font-size: 0.78rem;
-  color: var(--vp-c-text-3);
-}
-
-.banner-arrow {
+.update-more {
   margin-left: auto;
+  font-size: 0.75rem;
   color: var(--vp-c-text-3);
-  font-size: 0.9rem;
-  transition: transform 0.2s, color 0.2s;
+  flex-shrink: 0;
+  transition: color 0.2s;
 }
 
-.banner-link:hover .banner-arrow {
-  transform: translateX(4px);
+.recent-update:hover .update-more {
   color: var(--vp-c-brand-1);
 }
 </style>
