@@ -9,7 +9,7 @@ interface Category {
 }
 
 const categories: readonly Category[] = [
-  { title: '트래픽 & 장애 대응', desc: '대용량 트래픽, 스파이크, 부하 분산', link: '/pocket-senior/traffic/', icon: '🔥', count: 4, gradient: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(167,139,250,0.08))' },
+  { title: '트래픽 & 장애 대응', desc: '대용량 트래픽, 스파이크, 부하 분산', link: '/pocket-senior/traffic/', icon: '🔥', count: 5, gradient: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(167,139,250,0.08))' },
   { title: '데이터 정합성 & 동시성', desc: '락, 멱등성, 무결성, 정합성 설계', link: '/pocket-senior/concurrency/', icon: '🔒', count: 5, gradient: 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(167,139,250,0.08))' },
   { title: '장애 시나리오', desc: 'Redis, DB, 외부 API 장애 대응', link: '/pocket-senior/failure/', icon: '🛡️', count: 6, gradient: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(167,139,250,0.08))' },
   { title: '데이터베이스', desc: 'N+1, 쿼리 튜닝, 트랜잭션, 샤딩', link: '/pocket-senior/database/', icon: '🗄️', count: 9, gradient: 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(167,139,250,0.08))' },

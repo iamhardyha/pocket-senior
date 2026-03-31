@@ -29,6 +29,11 @@ layout: page
     <span class="note-title">장애 대응 전략</span>
     <span class="note-arrow">→</span>
   </a>
+  <a href="./대용량-데이터-스트리밍-처리.html" class="note-card">
+    <span class="note-number">05</span>
+    <span class="note-title">대용량 데이터 스트리밍 처리</span>
+    <span class="note-arrow">→</span>
+  </a>
 </div>
 
 </div>
