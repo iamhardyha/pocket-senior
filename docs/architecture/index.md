@@ -34,6 +34,11 @@ MSA, Kafka, 메시지큐, 이벤트 드리븐 아키텍처 패턴
     <span class="note-title">이벤트 리스너 vs 비동기</span>
     <span class="note-arrow">→</span>
   </a>
+  <a href="./웹소켓.html" class="note-card">
+    <span class="note-number">06</span>
+    <span class="note-title">WebSocket</span>
+    <span class="note-arrow">→</span>
+  </a>
 </div>
 
 </div>
