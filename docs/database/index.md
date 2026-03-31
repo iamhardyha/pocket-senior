@@ -49,6 +49,11 @@ N+1, 쿼리 튜닝, 트랜잭션, 샤딩 등 DB 최적화와 운영
     <span class="note-title">CDC (Change Data Capture)</span>
     <span class="note-arrow">→</span>
   </a>
+  <a href="./커넥션-풀-타임아웃-전략.html" class="note-card">
+    <span class="note-number">09</span>
+    <span class="note-title">커넥션 풀 타임아웃 전략</span>
+    <span class="note-arrow">→</span>
+  </a>
 </div>
 
 </div>
