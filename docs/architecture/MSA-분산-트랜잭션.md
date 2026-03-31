@@ -115,7 +115,7 @@ public JtaTransactionManager transactionManager() {
 | **단일 장애점** | Coordinator 죽으면 전체 트랜잭션이 멈춤 (Lock 잡힌 채로) |
 | **가용성 저하** | 하나의 참여자가 느리면 전체가 느려짐. 가장 느린 서비스에 맞춰짐 |
 | **서비스 자율성 상실** | 각 서비스가 독립 배포/확장 불가. MSA의 핵심 가치 훼손 |
-| **이기종 DB 불가** | NoSQL, 외부 API(카드사 등)는 XA 지원 안 함 |
+| **XA 미지원 시스템 연동 불가** | NoSQL, 외부 API(카드사 등)는 XA 지원 안 함 |
 | **네트워크 파티션** | Prepare OK 후 Commit 전에 네트워크 끊기면? → 불확정 상태 |
 
 ### 쓸 수 있는 유일한 상황

@@ -15,7 +15,7 @@
 | JDK | LTS | 지원 종료 | 상태 |
 |-----|-----|-----------|------|
 | 8 | O | 2030 (Oracle 유료) | 레거시지만 아직 가장 많이 쓰임 |
-| 11 | O | 2026 | 안정적, 모듈 시스템 도입 |
+| 11 | O | 벤더별 상이 | 안정적, 모듈 시스템 도입 |
 | 17 | O | 2029 | 많은 프로젝트의 현재 타겟 |
 | **21** | O | **2031** | 최신 LTS, Virtual Thread 포함 |
 
@@ -40,8 +40,9 @@
 ```java
 // JDK 8에서 쓰던 것 → JDK 21에서 삭제됨
 
-// javax → jakarta (JDK 17+ / Spring Boot 3+)
-import javax.persistence.Entity;    // ❌ 삭제
+// javax → jakarta (Jakarta EE 9+ / Spring Boot 3+)
+// ※ JDK가 삭제한 것이 아니라, Eclipse Foundation이 Jakarta EE 9에서 네임스페이스를 변경한 것
+import javax.persistence.Entity;    // ❌ 구 네임스페이스
 import jakarta.persistence.Entity;  // ✅ 변경
 
 // Java EE 모듈 제거 (JDK 11부터)
@@ -51,8 +52,8 @@ import javax.xml.bind.JAXBContext;  // ❌ 삭제
 // Nashorn JavaScript Engine 삭제 (JDK 15)
 // → GraalJS로 대체
 
-// Security Manager 삭제 (JDK 17)
-// → 대안 필요
+// Security Manager — Deprecated for Removal (JDK 17, JEP 411), 실제 삭제는 JDK 24 (JEP 486)
+// → JDK 21 시점에서는 deprecated 상태로 존재하지만 사용 비권장
 ```
 
 ### 2. 모듈 시스템 (JPMS) — JDK 9부터

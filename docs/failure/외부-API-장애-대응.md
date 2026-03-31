@@ -306,13 +306,13 @@ public void restoreAfterPeakHour() {
 ## 전체 방어 조합 — 실행 순서
 
 ```java
-// Resilience4j 실행 순서 (바깥 → 안쪽):
-// Retry → CircuitBreaker → Bulkhead → TimeLimiter → 실제 호출
+// Resilience4j 공식 권장 실행 순서 (바깥 → 안쪽):
+// Retry → CircuitBreaker → RateLimiter → TimeLimiter → Bulkhead → 실제 호출
 
-@Retry(name = "paymentService")           // 4. 실패 시 재시도
+@Retry(name = "paymentService")           // 4. 실패 시 재시도 (가장 바깥)
 @CircuitBreaker(name = "paymentService")  // 3. 실패율 높으면 차단
-@Bulkhead(name = "paymentService")        // 2. 스레드 격리
-@TimeLimiter(name = "paymentService")     // 1. 타임아웃
+@TimeLimiter(name = "paymentService")     // 2. 타임아웃
+@Bulkhead(name = "paymentService")        // 1. 스레드 격리 (가장 안쪽)
 public CompletableFuture<PaymentResponse> pay(PaymentRequest request) {
     return CompletableFuture.supplyAsync(() -> paymentClient.pay(request));
 }
@@ -321,8 +321,8 @@ public CompletableFuture<PaymentResponse> pay(PaymentRequest request) {
 ```
 요청 → Retry(재시도 래핑)
         → CircuitBreaker(OPEN이면 즉시 Fallback)
-          → Bulkhead(스레드 확보 못하면 거부)
-            → TimeLimiter(3초 내 응답 없으면 취소)
+          → TimeLimiter(3초 내 응답 없으면 취소)
+            → Bulkhead(스레드 확보 못하면 거부)
               → paymentClient.pay()
 ```
 

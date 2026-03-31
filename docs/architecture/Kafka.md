@@ -149,7 +149,7 @@ public DefaultErrorHandler errorHandler(KafkaTemplate<String, Object> template) 
 
     DefaultErrorHandler handler = new DefaultErrorHandler(
         recoverer,
-        new FixedBackOff(1000L, 3)  // 1초 간격, 3회 재시도
+        new FixedBackOff(1000L, 3)  // 1초 간격, 재시도 3회 (최초 1회 + 재시도 3회 = 총 4회 시도)
     );
 
     return handler;

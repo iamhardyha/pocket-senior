@@ -76,9 +76,9 @@ PURGE BINARY LOGS BEFORE DATE_SUB(NOW(), INTERVAL 3 DAY);
 
 ```
 1. Primary 장애 확인
-2. 가장 최신 Replica 선택 (SHOW SLAVE STATUS로 lag 확인)
-3. Replica에서 복제 중단: STOP SLAVE;
-4. Replica를 독립 Master로: RESET SLAVE ALL;
+2. 가장 최신 Replica 선택 (SHOW REPLICA STATUS로 lag 확인)
+3. Replica에서 복제 중단: STOP REPLICA;
+4. Replica를 독립 Master로: RESET REPLICA ALL;
 5. 애플리케이션 DB 연결을 새 Master로 변경
 6. 나머지 Replica를 새 Master로 연결
 
@@ -92,7 +92,7 @@ PURGE BINARY LOGS BEFORE DATE_SUB(NOW(), INTERVAL 3 DAY);
 Primary 장애 → Aurora가 자동 감지 (10초) → Replica를 Primary로 승격 (30초 이내)
 → DNS 엔드포인트는 그대로 → 애플리케이션 재연결 (자동)
 
-총 소요: 30초~1분
+총 소요: 일반적으로 30초 이내 (특정 조건에서 최대 60초)
 ```
 
 **MySQL + MHA (Master High Availability)**:

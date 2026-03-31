@@ -31,14 +31,14 @@ Replication Lag: 보통 20ms 이하
 | 스토리지 | EBS (단일 AZ) | 분산 (3 AZ, 6 복제) |
 | Replication | binlog 기반 (느림) | 스토리지 공유 (빠름) |
 | Failover | 1~2분 | 30초 이내 |
-| Read Replica | 최대 5대 | 최대 15대 |
+| Read Replica | 최대 15대 | 최대 15대 |
 | 자동 확장 | 수동 설정 | 10GB~128TB 자동 |
 | 백업 | 스냅샷 | 연속 백업 + PITR (1초 단위) |
 
 ### 성능 개선
 
 ```
-AWS 공식: "MySQL 대비 5배, PostgreSQL 대비 3배 성능"
+AWS 마케팅 수치: "MySQL 대비 5배, PostgreSQL 대비 3배 성능" (특정 쓰기 집중 워크로드 기준)
 
 현실적인 기대:
 - 읽기: 2~3배 향상 (스토리지 레이어 최적화)
