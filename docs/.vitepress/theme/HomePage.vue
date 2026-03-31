@@ -68,6 +68,17 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
         </a>
       </div>
     </section>
+
+    <section class="changelog-banner">
+      <a href="/pocket-senior/changelog.html" class="banner-link">
+        <span class="banner-icon">&#x1f4dd;</span>
+        <div class="banner-text">
+          <span class="banner-title">업데이트 내역</span>
+          <span class="banner-desc">새 노트 추가와 교정 이력을 확인하세요</span>
+        </div>
+        <span class="banner-arrow">→</span>
+      </a>
+    </section>
   </div>
 </template>
 
@@ -308,5 +319,63 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
   .home-container {
     padding: 0 1rem 3rem;
   }
+}
+
+.changelog-banner {
+  margin-top: 2rem;
+  position: relative;
+  z-index: 1;
+}
+
+.banner-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-decoration: none;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.06), rgba(124, 58, 237, 0.03));
+  border: 1px solid var(--vp-c-border);
+  border-radius: 12px;
+  padding: 1.1rem 1.5rem;
+  transition: border-color 0.3s, transform 0.2s, box-shadow 0.3s;
+}
+
+.banner-link:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(167, 139, 250, 0.1);
+}
+
+.banner-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.banner-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.banner-desc {
+  font-size: 0.78rem;
+  color: var(--vp-c-text-3);
+}
+
+.banner-arrow {
+  margin-left: auto;
+  color: var(--vp-c-text-3);
+  font-size: 0.9rem;
+  transition: transform 0.2s, color 0.2s;
+}
+
+.banner-link:hover .banner-arrow {
+  transform: translateX(4px);
+  color: var(--vp-c-brand-1);
 }
 </style>
