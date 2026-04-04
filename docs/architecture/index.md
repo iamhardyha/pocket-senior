@@ -39,6 +39,11 @@ MSA, Kafka, 메시지큐, 이벤트 드리븐 아키텍처 패턴
     <span class="note-title">WebSocket</span>
     <span class="note-arrow">→</span>
   </a>
+  <a href="./벌크헤드-패턴.html" class="note-card">
+    <span class="note-number">07</span>
+    <span class="note-title">벌크헤드 패턴 (Bulkhead Pattern)</span>
+    <span class="note-arrow">→</span>
+  </a>
 </div>
 
 </div>
