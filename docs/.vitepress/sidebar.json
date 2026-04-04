@@ -1,0 +1,202 @@
+[
+  {
+    "text": "트래픽 & 장애 대응",
+    "collapsed": false,
+    "items": [
+      {
+        "text": "트래픽 & 장애 대응",
+        "link": "/traffic/index"
+      },
+      {
+        "text": "대용량 데이터 스트리밍 처리",
+        "link": "/traffic/대용량-데이터-스트리밍-처리"
+      },
+      {
+        "text": "대용량 트래픽 대응",
+        "link": "/traffic/대용량-트래픽-대응"
+      },
+      {
+        "text": "부하 분산 아키텍처",
+        "link": "/traffic/부하-분산-아키텍처"
+      },
+      {
+        "text": "스파이크 트래픽 대처",
+        "link": "/traffic/스파이크-트래픽-대처"
+      },
+      {
+        "text": "장애 대응 전략",
+        "link": "/traffic/장애-대응-전략"
+      }
+    ]
+  },
+  {
+    "text": "데이터 정합성 & 동시성",
+    "collapsed": false,
+    "items": [
+      {
+        "text": "데이터 정합성 & 동시성",
+        "link": "/concurrency/index"
+      },
+      {
+        "text": "락 — 데이터 정합성 및 동시성 제어",
+        "link": "/concurrency/락과-동시성-제어"
+      },
+      {
+        "text": "멱등성 (Idempotency)",
+        "link": "/concurrency/멱등성"
+      },
+      {
+        "text": "무결성 (Integrity)",
+        "link": "/concurrency/무결성"
+      },
+      {
+        "text": "정합성, 무결성, 멱등성 설계",
+        "link": "/concurrency/정합성-무결성-멱등성-설계"
+      },
+      {
+        "text": "쿠폰, 중복처리 — 데이터 정합성",
+        "link": "/concurrency/쿠폰-중복처리-정합성"
+      }
+    ]
+  },
+  {
+    "text": "장애 시나리오",
+    "collapsed": false,
+    "items": [
+      {
+        "text": "DB 장애 시 대응",
+        "link": "/failure/DB-장애-대응"
+      },
+      {
+        "text": "장애 시나리오",
+        "link": "/failure/index"
+      },
+      {
+        "text": "여러 도메인이 걸칠 때 병목현상 관리",
+        "link": "/failure/도메인-병목-관리"
+      },
+      {
+        "text": "Redis 장애 시 대응",
+        "link": "/failure/레디스-장애-대응"
+      },
+      {
+        "text": "선착순 쿠폰 — 자정 트래픽 장애로 유실 시 대응",
+        "link": "/failure/선착순-쿠폰-유실-대응"
+      },
+      {
+        "text": "외부 API 타임아웃 및 장애 대응",
+        "link": "/failure/외부-API-장애-대응"
+      },
+      {
+        "text": "트래픽 과다 시 대응",
+        "link": "/failure/트래픽-과다-대응"
+      }
+    ]
+  },
+  {
+    "text": "데이터베이스",
+    "collapsed": false,
+    "items": [
+      {
+        "text": "AWS Aurora 업그레이드",
+        "link": "/database/Aurora-업그레이드"
+      },
+      {
+        "text": "CDC (Change Data Capture)",
+        "link": "/database/CDC"
+      },
+      {
+        "text": "DynamoDB",
+        "link": "/database/DynamoDB"
+      },
+      {
+        "text": "N+1 문제와 조회 최적화",
+        "link": "/database/N+1과-조회-최적화"
+      },
+      {
+        "text": "데이터베이스",
+        "link": "/database/index"
+      },
+      {
+        "text": "글로벌 서비스 운영 중 DB 마이그레이션",
+        "link": "/database/글로벌-서비스-DB-마이그레이션"
+      },
+      {
+        "text": "데이터베이스 단편화와 최적화",
+        "link": "/database/단편화와-최적화"
+      },
+      {
+        "text": "샤딩과 레플리카",
+        "link": "/database/샤딩과-레플리카"
+      },
+      {
+        "text": "커넥션 풀 타임아웃 전략",
+        "link": "/database/커넥션-풀-타임아웃-전략"
+      },
+      {
+        "text": "쿼리 최적화, 쿼리 튜닝",
+        "link": "/database/쿼리-최적화-튜닝"
+      },
+      {
+        "text": "트랜잭션 + 여러 데이터 소스에서의 트랜잭션 관리",
+        "link": "/database/트랜잭션-관리"
+      }
+    ]
+  },
+  {
+    "text": "아키텍처 & 비동기",
+    "collapsed": false,
+    "items": [
+      {
+        "text": "Kafka",
+        "link": "/architecture/Kafka"
+      },
+      {
+        "text": "MSA 구조와 필요성",
+        "link": "/architecture/MSA-구조와-필요성"
+      },
+      {
+        "text": "MSA 분산 트랜잭션",
+        "link": "/architecture/MSA-분산-트랜잭션"
+      },
+      {
+        "text": "아키텍처 & 비동기",
+        "link": "/architecture/index"
+      },
+      {
+        "text": "메시지큐 아키텍처",
+        "link": "/architecture/메시지큐-아키텍처"
+      },
+      {
+        "text": "벌크헤드 패턴 (Bulkhead Pattern)",
+        "link": "/architecture/벌크헤드-패턴"
+      },
+      {
+        "text": "WebSocket",
+        "link": "/architecture/웹소켓"
+      },
+      {
+        "text": "이벤트 리스너 vs 비동기",
+        "link": "/architecture/이벤트-리스너-vs-비동기"
+      }
+    ]
+  },
+  {
+    "text": "인프라 & 마이그레이션",
+    "collapsed": false,
+    "items": [
+      {
+        "text": "JDK 8 → JDK 21 마이그레이션",
+        "link": "/infra/JDK-마이그레이션"
+      },
+      {
+        "text": "인프라 & 마이그레이션",
+        "link": "/infra/index"
+      },
+      {
+        "text": "네트워크",
+        "link": "/infra/네트워크"
+      }
+    ]
+  }
+]
