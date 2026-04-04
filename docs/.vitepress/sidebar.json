@@ -1,12 +1,9 @@
 [
   {
     "text": "트래픽 & 장애 대응",
+    "link": "/traffic/",
     "collapsed": false,
     "items": [
-      {
-        "text": "트래픽 & 장애 대응",
-        "link": "/traffic/index"
-      },
       {
         "text": "대용량 데이터 스트리밍 처리",
         "link": "/traffic/대용량-데이터-스트리밍-처리"
@@ -31,12 +28,9 @@
   },
   {
     "text": "데이터 정합성 & 동시성",
+    "link": "/concurrency/",
     "collapsed": false,
     "items": [
-      {
-        "text": "데이터 정합성 & 동시성",
-        "link": "/concurrency/index"
-      },
       {
         "text": "락 — 데이터 정합성 및 동시성 제어",
         "link": "/concurrency/락과-동시성-제어"
@@ -61,15 +55,12 @@
   },
   {
     "text": "장애 시나리오",
+    "link": "/failure/",
     "collapsed": false,
     "items": [
       {
         "text": "DB 장애 시 대응",
         "link": "/failure/DB-장애-대응"
-      },
-      {
-        "text": "장애 시나리오",
-        "link": "/failure/index"
       },
       {
         "text": "여러 도메인이 걸칠 때 병목현상 관리",
@@ -95,6 +86,7 @@
   },
   {
     "text": "데이터베이스",
+    "link": "/database/",
     "collapsed": false,
     "items": [
       {
@@ -112,10 +104,6 @@
       {
         "text": "N+1 문제와 조회 최적화",
         "link": "/database/N+1과-조회-최적화"
-      },
-      {
-        "text": "데이터베이스",
-        "link": "/database/index"
       },
       {
         "text": "글로벌 서비스 운영 중 DB 마이그레이션",
@@ -145,6 +133,7 @@
   },
   {
     "text": "아키텍처 & 비동기",
+    "link": "/architecture/",
     "collapsed": false,
     "items": [
       {
@@ -158,10 +147,6 @@
       {
         "text": "MSA 분산 트랜잭션",
         "link": "/architecture/MSA-분산-트랜잭션"
-      },
-      {
-        "text": "아키텍처 & 비동기",
-        "link": "/architecture/index"
       },
       {
         "text": "메시지큐 아키텍처",
@@ -183,15 +168,12 @@
   },
   {
     "text": "인프라 & 마이그레이션",
+    "link": "/infra/",
     "collapsed": false,
     "items": [
       {
         "text": "JDK 8 → JDK 21 마이그레이션",
         "link": "/infra/JDK-마이그레이션"
-      },
-      {
-        "text": "인프라 & 마이그레이션",
-        "link": "/infra/index"
       },
       {
         "text": "네트워크",

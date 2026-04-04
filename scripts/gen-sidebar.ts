@@ -29,6 +29,7 @@ interface SidebarItem {
 
 interface SidebarGroup {
   readonly text: string
+  readonly link: string
   readonly collapsed: boolean
   readonly items: readonly SidebarItem[]
 }
@@ -45,21 +46,24 @@ function buildSidebarItems(category: string): readonly SidebarItem[] {
     .filter((f) => f.endsWith('.md'))
     .sort()
 
-  return files.map((file) => {
-    const filePath = join(categoryDir, file)
-    const title = extractH1Title(filePath)
-    const slug = basename(file, '.md')
+  return files
+    .filter((file) => file !== 'index.md')
+    .map((file) => {
+      const filePath = join(categoryDir, file)
+      const title = extractH1Title(filePath)
+      const slug = basename(file, '.md')
 
-    return {
-      text: title ?? slug,
-      link: `/${category}/${slug}`,
-    }
-  })
+      return {
+        text: title ?? slug,
+        link: `/${category}/${slug}`,
+      }
+    })
 }
 
 function generateSidebar(): readonly SidebarGroup[] {
   return CATEGORY_ORDER.map((category) => ({
     text: CATEGORY_LABELS[category],
+    link: `/${category}/`,
     collapsed: false,
     items: buildSidebarItems(category),
   }))
