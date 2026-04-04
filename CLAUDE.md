@@ -51,8 +51,12 @@ URL: https://iamhardyha.github.io/pocket-senior/
 
 검증 완료된 노트를 저장한다:
 1. `docs/<category>/<제목>.md`에 노트 저장
-2. `docs/00-질문목록.md`에 항목 추가 (상태: 🟢)
-3. 새 카테고리가 필요하면 `docs/<new-category>/` 디렉토리 생성
+   - frontmatter 필수: `tags`, `question`, `status`, `order`
+   - tags: 기술 키워드(영문) + 개념 키워드(한국어), 3~6개
+   - question: 질문목록에 표시될 질문 텍스트
+   - status: 🟢 (완료)
+   - order: 카테고리 내 순번 (기존 마지막 번호 + 1)
+2. 새 카테고리가 필요하면 `docs/<new-category>/` 디렉토리 생성
 
 ### 4. 배포
 
@@ -87,3 +91,8 @@ docs/                    <- Obsidian vault + VitePress source
 - 파일명: 한국어 kebab-case (예: `락과-동시성-제어.md`)
 - 내부 링크: 같은 디렉토리 `./file.md`, 다른 디렉토리 `../category/file.md`
 - 상태 표기: 🔴 미학습, 🟡 학습중, 🟢 완료
+- frontmatter 필수 필드:
+  - `tags`: 기술 키워드(영문, e.g. Redis, Kafka) + 개념 키워드(한국어, e.g. 캐싱, 장애복구), 3~6개
+  - `question`: 질문목록에 표시될 질문 텍스트
+  - `status`: 🔴 미학습, 🟡 학습중, 🟢 완료
+  - `order`: 카테고리 내 정렬 순서 (정수)
