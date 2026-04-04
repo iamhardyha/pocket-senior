@@ -1,3 +1,10 @@
+---
+tags: [Aurora, AWS, MySQL, 마이그레이션, 성능최적화]
+question: "AWS Aurora 업그레이드 고민과 장점"
+status: 🟢
+order: 5
+---
+
 # AWS Aurora 업그레이드
 
 > **핵심 질문**: AWS Aurora로 업그레이드하면서 고민한 점? 어떤 점이 나아졌는지?

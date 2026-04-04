@@ -1,3 +1,10 @@
+---
+tags: [MySQL, 장애복구, 레플리카, 페일오버, Aurora]
+question: "DB 장애 시 대응"
+status: 🟢
+order: 3
+---
+
 # DB 장애 시 대응
 
 > **핵심 질문**: DB가 장애가 난다면 어떻게 대응하는가?

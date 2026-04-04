@@ -1,3 +1,10 @@
+---
+tags: [Kafka, 메시지큐, 비동기, 분산처리, 스트리밍]
+question: "Kafka"
+status: 🟢
+order: 4
+---
+
 # Kafka
 
 > **핵심 질문**: Kafka는 무엇이고, 어떻게 동작하며, 실무에서 어떻게 사용하는가?

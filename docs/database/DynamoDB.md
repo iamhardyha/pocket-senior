@@ -1,3 +1,10 @@
+---
+tags: [DynamoDB, AWS, NoSQL, 성능최적화, 샤딩]
+question: "DynamoDB"
+status: 🟢
+order: 6
+---
+
 # DynamoDB
 
 > **핵심 질문**: DynamoDB는 무엇이고, 언제 쓰고, 어떻게 설계하는가?

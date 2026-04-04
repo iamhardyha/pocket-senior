@@ -1,3 +1,10 @@
+---
+tags: [JDK, 마이그레이션, Spring, Java, 호환성]
+question: "JDK 8 → JDK 21 마이그레이션 고려사항"
+status: 🟢
+order: 1
+---
+
 # JDK 8 → JDK 21 마이그레이션
 
 > **핵심 질문**: JDK 8에서 JDK 21로 옮기면서 어떤 점을 고려했는지?

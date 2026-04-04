@@ -1,3 +1,10 @@
+---
+tags: [CDC, Kafka, MySQL, 분산처리, 이벤트]
+question: "CDC (Change Data Capture)"
+status: 🟢
+order: 8
+---
+
 # CDC (Change Data Capture)
 
 > **핵심 질문**: CDC가 무엇인가?

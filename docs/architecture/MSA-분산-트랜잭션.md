@@ -1,3 +1,10 @@
+---
+tags: [MSA, 트랜잭션, Saga, 분산처리, Kafka]
+question: "MSA 분산 트랜잭션 — Saga, Outbox, 보상 트랜잭션"
+status: 🟢
+order: 3
+---
+
 # MSA 분산 트랜잭션
 
 > **핵심 질문**: MSA 환경에서 여러 서비스에 걸친 트랜잭션을 어떻게 관리하는가?
