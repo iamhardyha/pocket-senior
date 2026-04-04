@@ -48,7 +48,7 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
     <a href="/pocket-senior/changelog.html" class="recent-update">
       <span class="update-dot" />
       <span class="update-label">최근 업데이트</span>
-      <span class="update-text">WebSocket, 커넥션 풀 타임아웃, 대용량 스트리밍 + 전체 30개 노트 교정</span>
+      <span class="update-text">DB 단편화와 최적화, 벌크헤드 패턴 추가</span>
       <span class="update-more">더보기 →</span>
     </a>
 

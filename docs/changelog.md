@@ -12,6 +12,32 @@ layout: page
 
 <div class="changelog-entry">
 <div class="changelog-date">
+<span class="date-badge">2026-04-05</span>
+</div>
+<div class="changelog-content">
+<div class="changelog-section">
+<span class="changelog-tag tag-new">NEW</span>
+<h3>새 노트 2개 추가</h3>
+<div class="changelog-items">
+<a href="./database/단편화와-최적화.html" class="changelog-link">
+<span class="link-category">데이터베이스</span>
+<span class="link-title">데이터베이스 단편화와 최적화</span>
+<span class="link-desc">DELETE 후 디스크 미반환 원리, InnoDB 페이지 단편화, OPTIMIZE TABLE, pt-osc/gh-ost</span>
+<span class="link-arrow">→</span>
+</a>
+<a href="./architecture/벌크헤드-패턴.html" class="changelog-link">
+<span class="link-category">아키텍처</span>
+<span class="link-title">벌크헤드 패턴 (Bulkhead Pattern)</span>
+<span class="link-desc">자원 격리로 연쇄 장애 방지, 세마포어/스레드 풀 격리, Resilience4j 구현</span>
+<span class="link-arrow">→</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+
+<div class="changelog-entry">
+<div class="changelog-date">
 <span class="date-badge">2026-03-31</span>
 </div>
 <div class="changelog-content">
