@@ -1,39 +1,4 @@
-/* ── Fonts ── */
-:root {
-  --vp-font-family-base: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
-  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', monospace;
-}
-
-/* ── Dark Purple Palette ── */
-.dark {
-  --vp-c-bg: #0d0b1a;
-  --vp-c-bg-alt: #141225;
-  --vp-c-bg-elv: #1a1730;
-  --vp-c-bg-soft: #1e1b33;
-
-  --vp-c-text-1: #e8e4f0;
-  --vp-c-text-2: #b8b0cc;
-  --vp-c-text-3: #8a80a4;
-
-  --vp-c-brand-1: #a78bfa;
-  --vp-c-brand-2: #8b5cf6;
-  --vp-c-brand-3: #7c3aed;
-  --vp-c-brand-soft: rgba(167, 139, 250, 0.14);
-
-  --vp-c-border: #2a2545;
-  --vp-c-divider: #2a2545;
-  --vp-c-gutter: #1a1730;
-
-  --vp-code-block-bg: #13111f;
-
-  --vp-sidebar-bg-color: #0d0b1a;
-  --vp-nav-bg-color: rgba(13, 11, 26, 0.85);
-}
-
-/* ── Force Dark Mode ── */
-html {
-  color-scheme: dark;
-}
+/* Tokens는 tokens.css에서 정의. 이 파일은 tokens 기반 컴포넌트 스타일만 담당. */
 
 /* ── Nav blur effect ── */
 .VPNav {
@@ -72,7 +37,7 @@ html {
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #e8e4f0, #a78bfa);
+  background: linear-gradient(135deg, var(--ps-ink-1), var(--ps-accent-1));
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -90,18 +55,18 @@ html {
 
 /* ── Blockquote — 핵심 질문 styling ── */
 .vp-doc blockquote {
-  background: linear-gradient(135deg, rgba(167, 139, 250, 0.08), rgba(124, 58, 237, 0.04));
+  background: linear-gradient(135deg, var(--ps-accent-soft), var(--ps-accent-soft));
   border-left: 4px solid var(--vp-c-brand-1);
   border-radius: 0 12px 12px 0;
   padding: 1.25rem 1.5rem;
-  box-shadow: 0 2px 12px rgba(167, 139, 250, 0.06);
+  box-shadow: var(--ps-shadow-sm);
 }
 
 /* ── Code Block ── */
 .vp-doc div[class*='language-'] {
   border-radius: 12px;
   border: 1px solid var(--vp-c-border);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--ps-shadow-md);
 }
 
 .vp-doc [class*='language-'] code {
@@ -112,7 +77,7 @@ html {
 .vp-doc table {
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--ps-shadow-md);
 }
 
 .vp-doc tr {
@@ -187,7 +152,7 @@ html {
   font-size: 2rem;
   font-weight: 800;
   margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, #e8e4f0, #a78bfa);
+  background: linear-gradient(135deg, var(--ps-ink-1), var(--ps-accent-1));
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -222,7 +187,7 @@ html {
 .note-card:hover {
   border-color: var(--vp-c-brand-1);
   transform: translateX(4px);
-  box-shadow: 0 4px 20px rgba(167, 139, 250, 0.1);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
 }
 
 .note-card .note-number {
@@ -268,7 +233,7 @@ html {
   font-size: 2rem;
   font-weight: 800;
   margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, #e8e4f0, #a78bfa);
+  background: linear-gradient(135deg, var(--ps-ink-1), var(--ps-accent-1));
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -322,7 +287,7 @@ html {
   font-family: var(--vp-font-family-mono);
   color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
-  border: 1px solid rgba(167, 139, 250, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
   border-radius: 8px;
   padding: 0.2rem 0.7rem;
   margin-bottom: 0.75rem;
@@ -352,9 +317,9 @@ html {
 }
 
 .tag-new {
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.12);
-  border: 1px solid rgba(52, 211, 153, 0.25);
+  color: var(--ps-accent-1);
+  background: var(--ps-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 25%, transparent);
 }
 
 .tag-fix {
@@ -364,9 +329,9 @@ html {
 }
 
 .tag-launch {
-  color: #a78bfa;
+  color: var(--ps-accent-1);
   background: var(--vp-c-brand-soft);
-  border: 1px solid rgba(167, 139, 250, 0.25);
+  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 25%, transparent);
 }
 
 .changelog-items {
@@ -392,7 +357,7 @@ html {
 .changelog-link:hover {
   border-color: var(--vp-c-brand-1) !important;
   transform: translateX(4px);
-  box-shadow: 0 4px 16px rgba(167, 139, 250, 0.1);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
 }
 
 .link-category {

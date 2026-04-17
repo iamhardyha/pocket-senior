@@ -1,0 +1,115 @@
+/* ============================================================
+ * Pocket Senior — Design Tokens
+ * Light(default) & Dark(html.dark) palettes + typography/spacing.
+ * All components should reference these tokens, not raw values.
+ * ============================================================ */
+
+:root {
+  /* ── Palette (Light — editorial cream paper) ── */
+  --ps-bg: #faf7f0;
+  --ps-bg-alt: #f3efe4;
+  --ps-bg-elv: #ffffff;
+  --ps-bg-soft: #ede8d9;
+  --ps-ink-1: #1b1726;
+  --ps-ink-2: #4a4259;
+  --ps-ink-3: #847b95;
+  --ps-accent-1: #6d4dd8;
+  --ps-accent-2: #5b3dc7;
+  --ps-accent-3: #4a2cb0;
+  --ps-accent-soft: rgba(109, 77, 216, 0.12);
+  --ps-border: #e2dcc8;
+  --ps-rule: #d9d2bc;
+
+  /* ── Typography Scale ── */
+  --ps-text-xs: 0.75rem;
+  --ps-text-sm: 0.875rem;
+  --ps-text-base: 1.0625rem;
+  --ps-text-md: 1.15rem;
+  --ps-text-lg: 1.35rem;
+  --ps-text-xl: 1.7rem;
+  --ps-text-2xl: 2.25rem;
+  --ps-text-3xl: 3rem;
+  --ps-text-4xl: 4rem;
+
+  --ps-leading-body: 1.8;
+  --ps-leading-display: 1.2;
+  --ps-tracking-display: -0.02em;
+
+  /* ── Font Stacks ── */
+  --ps-font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ps-font-serif: 'Source Serif 4', 'Noto Serif KR', Georgia, serif;
+  --ps-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Spacing ── */
+  --ps-space-1: 4px;
+  --ps-space-2: 8px;
+  --ps-space-3: 12px;
+  --ps-space-4: 16px;
+  --ps-space-5: 24px;
+  --ps-space-6: 32px;
+  --ps-space-7: 48px;
+  --ps-space-8: 64px;
+  --ps-space-9: 96px;
+
+  /* ── Radius ── */
+  --ps-radius-sm: 6px;
+  --ps-radius-md: 10px;
+  --ps-radius-lg: 14px;
+  --ps-radius-xl: 20px;
+
+  /* ── Width ── */
+  --ps-width-read: 68ch;
+  --ps-width-page: 960px;
+  --ps-width-wide: 1200px;
+
+  /* ── Shadow ── */
+  --ps-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --ps-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --ps-shadow-glow: 0 8px 32px var(--ps-accent-soft);
+}
+
+html.dark {
+  /* ── Palette (Dark — editorial warm ink) ── */
+  --ps-bg: #14121c;
+  --ps-bg-alt: #1a1826;
+  --ps-bg-elv: #221f32;
+  --ps-bg-soft: #262338;
+  --ps-ink-1: #ece7f3;
+  --ps-ink-2: #b5aec8;
+  --ps-ink-3: #7d7594;
+  --ps-accent-1: #b89dfa;
+  --ps-accent-2: #9a77f5;
+  --ps-accent-3: #7c3aed;
+  --ps-accent-soft: rgba(184, 157, 250, 0.14);
+  --ps-border: #2c2844;
+  --ps-rule: #262338;
+
+  --ps-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ps-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --ps-shadow-glow: 0 8px 32px var(--ps-accent-soft);
+}
+
+/* ── VitePress variable bridge ──
+ * VitePress 내부 컴포넌트(사이드바·nav·검색)가 참조하는 --vp-c-* 변수를
+ * 우리 토큰에서 파생. 두 팔레트 전환이 VitePress UI에도 자동 반영됨. */
+:root {
+  --vp-c-bg: var(--ps-bg);
+  --vp-c-bg-alt: var(--ps-bg-alt);
+  --vp-c-bg-elv: var(--ps-bg-elv);
+  --vp-c-bg-soft: var(--ps-bg-soft);
+  --vp-c-text-1: var(--ps-ink-1);
+  --vp-c-text-2: var(--ps-ink-2);
+  --vp-c-text-3: var(--ps-ink-3);
+  --vp-c-brand-1: var(--ps-accent-1);
+  --vp-c-brand-2: var(--ps-accent-2);
+  --vp-c-brand-3: var(--ps-accent-3);
+  --vp-c-brand-soft: var(--ps-accent-soft);
+  --vp-c-border: var(--ps-border);
+  --vp-c-divider: var(--ps-border);
+  --vp-c-gutter: var(--ps-bg-elv);
+  --vp-code-block-bg: var(--ps-bg-alt);
+  --vp-sidebar-bg-color: var(--ps-bg);
+  --vp-nav-bg-color: color-mix(in srgb, var(--ps-bg) 85%, transparent);
+  --vp-font-family-base: var(--ps-font-sans);
+  --vp-font-family-mono: var(--ps-font-mono);
+}
