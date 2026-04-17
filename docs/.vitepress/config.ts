@@ -7,6 +7,7 @@ export default defineConfig({
   base: '/pocket-senior/',
   appearance: 'dark',
   cleanUrls: true,
+  srcExclude: ['**/superpowers/**'],
   head: [
     ['link', { rel: 'preconnect', href: 'https://cdn.jsdelivr.net' }],
     ['link', { rel: 'stylesheet', href: 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css' }],
