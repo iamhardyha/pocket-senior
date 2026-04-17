@@ -9,6 +9,7 @@ export interface NoteData {
   readonly question: string
   readonly status: string
   readonly order: number
+  readonly readingMinutes: number
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -36,7 +37,17 @@ const EXCLUDED_PATTERNS = [
   '/tags',
 ]
 
+/**
+ * 한국어 기준 400자/분 추정. raw 본문 길이의 단순 근사치 (공백 제거 후 count / 400).
+ * 최소 1분.
+ */
+function estimateReadingMinutes(raw: string): number {
+  const chars = raw.replace(/\s+/g, '').length
+  return Math.max(1, Math.round(chars / 400))
+}
+
 export default createContentLoader('**/*.md', {
+  includeSrc: true,
   transform(rawData): NoteData[] {
     return rawData
       .filter((page) => {
@@ -48,6 +59,7 @@ export default createContentLoader('**/*.md', {
       .map((page) => {
         const urlSegments = page.url.split('/').filter(Boolean)
         const category = urlSegments[0] ?? ''
+        const src = (page.src as string) ?? ''
         return {
           title: page.frontmatter.title as string
             ?? (page.url.split('/').pop() ?? ''),
@@ -58,6 +70,7 @@ export default createContentLoader('**/*.md', {
           question: (page.frontmatter.question as string) ?? '',
           status: (page.frontmatter.status as string) ?? '🔴',
           order: (page.frontmatter.order as number) ?? 99,
+          readingMinutes: estimateReadingMinutes(src),
         }
       })
       .sort((a, b) => {
