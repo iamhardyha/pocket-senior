@@ -521,6 +521,11 @@ html {
   .VPNavBar .VPSocialLinks {
     display: none;
   }
+
+  /* 상단 nav 링크가 항상 보이므로 햄버거는 중복 → 숨김 */
+  .VPNavBar .VPNavBarHamburger {
+    display: none !important;
+  }
 }
 
 @media (max-width: 420px) {
