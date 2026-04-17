@@ -2,31 +2,30 @@
 import { ref, computed } from 'vue'
 import { data as notes } from '../data/notes.data'
 import type { NoteData } from '../data/notes.data'
+import { CATEGORIES } from './categories'
 
 const CATEGORY_OPTIONS = [
   { value: '', label: '전체' },
-  { value: 'traffic', label: '트래픽 & 장애 대응' },
-  { value: 'concurrency', label: '데이터 정합성 & 동시성' },
-  { value: 'failure', label: '장애 시나리오' },
-  { value: 'database', label: '데이터베이스' },
-  { value: 'architecture', label: '아키텍처 & 비동기' },
-  { value: 'infra', label: '인프라 & 마이그레이션' },
+  ...CATEGORIES.map((c) => ({ value: c.key, label: c.label })),
 ] as const
 
 const STATUS_OPTIONS = [
   { value: '', label: '전체' },
-  { value: '🟢', label: '🟢 완료' },
-  { value: '🟡', label: '🟡 학습중' },
-  { value: '🔴', label: '🔴 미학습' },
+  { value: '🟢', label: '완료' },
+  { value: '🟡', label: '학습중' },
+  { value: '🔴', label: '미학습' },
 ] as const
 
-const CATEGORY_NUMBERS: Record<string, number> = {
-  traffic: 1,
-  concurrency: 2,
-  failure: 3,
-  database: 4,
-  architecture: 5,
-  infra: 6,
+const STATUS_SYMBOL: Record<string, string> = {
+  '🟢': '●',
+  '🟡': '◐',
+  '🔴': '○',
+}
+
+const STATUS_CLASS: Record<string, string> = {
+  '🟢': 'status--done',
+  '🟡': 'status--wip',
+  '🔴': 'status--todo',
 }
 
 const categoryFilter = ref('')
@@ -41,17 +40,16 @@ function withBase(url: string): string {
   return base + url
 }
 
-function getNoteId(note: NoteData): string {
-  const catNum = CATEGORY_NUMBERS[note.category] ?? 0
-  return `${catNum}-${note.order}`
+function getNoteNumber(note: NoteData): string {
+  const catMeta = CATEGORIES.find((c) => c.key === note.category)
+  const catNum = catMeta?.order ?? 0
+  return `${catNum}-${String(note.order).padStart(2, '0')}`
 }
 
 const allTags = computed((): readonly string[] => {
   const tagSet = new Set<string>()
   for (const note of notes) {
-    for (const tag of note.tags) {
-      tagSet.add(tag)
-    }
+    for (const tag of note.tags) tagSet.add(tag)
   }
   return [...tagSet].sort()
 })
@@ -60,24 +58,42 @@ const filteredNotes = computed((): readonly NoteData[] => {
   return notes.filter((note) => {
     const matchesCategory = categoryFilter.value === '' || note.category === categoryFilter.value
     const matchesStatus = statusFilter.value === '' || note.status === statusFilter.value
+    const q = searchQuery.value.toLowerCase()
     const matchesSearch =
-      searchQuery.value === '' ||
-      note.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      note.question.toLowerCase().includes(searchQuery.value.toLowerCase())
+      q === '' ||
+      note.title.toLowerCase().includes(q) ||
+      note.question.toLowerCase().includes(q)
     const matchesTags =
       selectedTags.value.length === 0 ||
       selectedTags.value.every((tag) => note.tags.includes(tag))
-
     return matchesCategory && matchesStatus && matchesSearch && matchesTags
   })
 })
 
-function toggleTag(tag: string): void {
-  if (selectedTags.value.includes(tag)) {
-    selectedTags.value = selectedTags.value.filter((t) => t !== tag)
-  } else {
-    selectedTags.value = [...selectedTags.value, tag]
+interface Group {
+  readonly key: string
+  readonly label: string
+  readonly notes: readonly NoteData[]
+}
+
+const groups = computed<readonly Group[]>(() => {
+  if (categoryFilter.value !== '') {
+    const cat = CATEGORIES.find((c) => c.key === categoryFilter.value)
+    return [{ key: categoryFilter.value, label: cat?.label ?? categoryFilter.value, notes: filteredNotes.value }]
   }
+  return CATEGORIES
+    .map((c) => ({
+      key: c.key,
+      label: c.label,
+      notes: filteredNotes.value.filter((n) => n.category === c.key),
+    }))
+    .filter((g) => g.notes.length > 0)
+})
+
+function toggleTag(tag: string): void {
+  selectedTags.value = selectedTags.value.includes(tag)
+    ? selectedTags.value.filter((t) => t !== tag)
+    : [...selectedTags.value, tag]
 }
 
 function removeTag(tag: string): void {
@@ -92,33 +108,22 @@ function toggleTagSelector(): void {
 <template>
   <div class="question-list">
     <!-- Header -->
-    <div class="ql-header">
+    <header class="ql-header">
       <h1 class="ql-title">학습 질문 목록</h1>
       <p class="ql-desc">카테고리, 상태, 태그, 키워드로 질문을 필터링하세요.</p>
-    </div>
+    </header>
 
     <!-- Filters -->
-    <div class="ql-filters">
+    <section class="ql-filters">
       <div class="filter-row">
-        <!-- Category dropdown -->
         <select v-model="categoryFilter" class="filter-select">
-          <option
-            v-for="opt in CATEGORY_OPTIONS"
-            :key="opt.value"
-            :value="opt.value"
-          >{{ opt.label }}</option>
+          <option v-for="opt in CATEGORY_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
 
-        <!-- Status dropdown -->
         <select v-model="statusFilter" class="filter-select">
-          <option
-            v-for="opt in STATUS_OPTIONS"
-            :key="opt.value"
-            :value="opt.value"
-          >{{ opt.label }}</option>
+          <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
 
-        <!-- Search input -->
         <input
           v-model="searchQuery"
           type="text"
@@ -127,10 +132,8 @@ function toggleTagSelector(): void {
         />
       </div>
 
-      <!-- Tag section -->
       <div class="tag-section">
         <div class="tag-row">
-          <!-- Selected tag chips -->
           <span
             v-for="tag in selectedTags"
             :key="tag"
@@ -139,14 +142,11 @@ function toggleTagSelector(): void {
           >
             {{ tag }} ✕
           </span>
-
-          <!-- Toggle tag palette button -->
           <button class="tag-toggle-btn" @click="toggleTagSelector">
             {{ showTagSelector ? '태그 닫기' : '태그 추가' }}
           </button>
         </div>
 
-        <!-- Tag palette -->
         <div v-if="showTagSelector" class="tag-palette">
           <span
             v-for="tag in allTags"
@@ -159,370 +159,276 @@ function toggleTagSelector(): void {
           </span>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Results info -->
-    <div class="ql-results-info">
-      총 <strong>{{ notes.length }}</strong>개 중 <strong>{{ filteredNotes.length }}</strong>개 표시
-    </div>
+    <!-- Count -->
+    <p class="ql-count">
+      {{ filteredNotes.length }} / {{ notes.length }} questions
+    </p>
 
-    <!-- Table -->
-    <div class="ql-table-wrapper">
-      <div class="ql-table-header ql-row">
-        <span class="col-id">#</span>
-        <span class="col-question">질문</span>
-        <span class="col-status">상태</span>
-        <span class="col-category">카테고리</span>
-      </div>
+    <!-- Empty state -->
+    <p v-if="filteredNotes.length === 0" class="ql-empty">
+      조건에 맞는 질문이 없습니다.
+    </p>
 
-      <div v-if="filteredNotes.length === 0" class="ql-empty">
-        조건에 맞는 질문이 없습니다.
-      </div>
-
-      <a
-        v-for="note in filteredNotes"
-        :key="note.url"
-        :href="withBase(note.url) + '.html'"
-        class="ql-row ql-row--item"
-      >
-        <span class="col-id">
-          <span class="note-id">{{ getNoteId(note) }}</span>
-        </span>
-        <span class="col-question">
-          <span class="note-title">{{ note.title }}</span>
-          <span v-if="note.question" class="note-question">{{ note.question }}</span>
-        </span>
-        <span class="col-status">{{ note.status }}</span>
-        <span class="col-category">
-          <span class="category-badge">{{ note.categoryLabel }}</span>
-        </span>
-      </a>
-    </div>
+    <!-- Grouped list -->
+    <section v-for="group in groups" :key="group.key" class="ql-group">
+      <h2 class="ql-group-label">{{ group.label }}</h2>
+      <ol class="ql-list">
+        <li v-for="note in group.notes" :key="note.url" class="ql-item">
+          <a :href="withBase(note.url) + '.html'" class="ql-link">
+            <span class="ql-num">{{ getNoteNumber(note) }}</span>
+            <span class="ql-body">
+              <span class="ql-heading">{{ note.title }}</span>
+              <span v-if="note.question" class="ql-question">{{ note.question }}</span>
+            </span>
+            <span class="ql-status" :class="STATUS_CLASS[note.status]" :title="note.status">
+              {{ STATUS_SYMBOL[note.status] ?? note.status }}
+            </span>
+          </a>
+        </li>
+      </ol>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .question-list {
-  max-width: 960px;
+  max-width: var(--ps-width-page);
   margin: 0 auto;
-  padding: 2rem 1.5rem 4rem;
+  padding: var(--ps-space-7) var(--ps-space-5) var(--ps-space-8);
 }
 
 /* Header */
 .ql-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--vp-c-border);
+  margin-bottom: var(--ps-space-6);
+  padding-bottom: var(--ps-space-5);
+  border-bottom: 1px solid var(--ps-rule);
 }
 
 .ql-title {
-  font-size: 2rem;
-  font-weight: 800;
-  margin: 0 0 0.5rem;
-  background: linear-gradient(135deg, #e8e4f0, #a78bfa);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-family: var(--ps-font-serif);
+  font-size: var(--ps-text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--ps-tracking-display);
+  color: var(--ps-ink-1);
+  margin: 0 0 var(--ps-space-2);
 }
 
 .ql-desc {
-  color: var(--vp-c-text-3);
-  font-size: 0.95rem;
+  font-size: var(--ps-text-sm);
+  color: var(--ps-ink-3);
   margin: 0;
 }
 
 /* Filters */
 .ql-filters {
-  background: var(--vp-c-bg-elv);
-  border: 1px solid var(--vp-c-border);
-  border-radius: 14px;
-  padding: 1.25rem 1.5rem;
-  margin-bottom: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--ps-space-4);
+  margin-bottom: var(--ps-space-5);
 }
 
 .filter-row {
   display: flex;
-  gap: 0.75rem;
+  gap: var(--ps-space-3);
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .filter-select {
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-border);
-  border-radius: 8px;
-  color: var(--vp-c-text-1);
-  font-size: 0.875rem;
-  padding: 0.45rem 0.85rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ps-border);
+  color: var(--ps-ink-1);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-sm);
+  padding: var(--ps-space-2) var(--ps-space-3);
   cursor: pointer;
-  transition: border-color 0.2s;
   min-width: 160px;
+  transition: border-color 0.2s;
 }
 
 .filter-select:focus {
   outline: none;
-  border-color: var(--vp-c-brand-1);
+  border-bottom-color: var(--ps-accent-1);
 }
 
 .filter-select option {
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
+  background: var(--ps-bg-elv);
+  color: var(--ps-ink-1);
 }
 
 .filter-input {
   flex: 1;
   min-width: 180px;
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-border);
-  border-radius: 8px;
-  color: var(--vp-c-text-1);
-  font-size: 0.875rem;
-  padding: 0.45rem 0.85rem;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ps-border);
+  color: var(--ps-ink-1);
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-sm);
+  padding: var(--ps-space-2) var(--ps-space-3);
   transition: border-color 0.2s;
-  font-family: var(--vp-font-family-base);
 }
 
-.filter-input::placeholder {
-  color: var(--vp-c-text-3);
-}
-
-.filter-input:focus {
-  outline: none;
-  border-color: var(--vp-c-brand-1);
-}
+.filter-input::placeholder { color: var(--ps-ink-3); }
+.filter-input:focus { outline: none; border-bottom-color: var(--ps-accent-1); }
 
 /* Tags */
-.tag-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.tag-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
+.tag-section { display: flex; flex-direction: column; gap: var(--ps-space-3); }
+.tag-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ps-space-2); }
 
 .tag-chip {
   display: inline-flex;
   align-items: center;
-  font-size: 0.75rem;
+  font-size: var(--ps-text-xs);
   font-weight: 500;
-  padding: 0.25rem 0.6rem;
-  border-radius: 20px;
-  border: 1px solid var(--vp-c-border);
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-2);
+  padding: var(--ps-space-1) var(--ps-space-3);
+  border-radius: 999px;
+  border: 1px solid var(--ps-border);
+  background: transparent;
+  color: var(--ps-ink-2);
   cursor: pointer;
   transition: border-color 0.2s, color 0.2s, background 0.2s;
   user-select: none;
 }
 
-.tag-chip:hover {
-  border-color: var(--vp-c-brand-1);
-  color: var(--vp-c-brand-1);
-}
+.tag-chip:hover { border-color: var(--ps-accent-1); color: var(--ps-accent-1); }
 
 .tag-chip--selected {
-  border-color: var(--vp-c-brand-2);
-  background: var(--vp-c-brand-soft);
-  color: var(--vp-c-brand-1);
+  border-color: var(--ps-accent-2);
+  background: var(--ps-accent-soft);
+  color: var(--ps-accent-1);
 }
 
 .tag-toggle-btn {
-  font-size: 0.8rem;
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-xs);
   font-weight: 600;
-  padding: 0.3rem 0.8rem;
-  border-radius: 20px;
-  border: 1px solid var(--vp-c-brand-2);
-  background: var(--vp-c-brand-soft);
-  color: var(--vp-c-brand-1);
+  padding: var(--ps-space-1) var(--ps-space-3);
+  border-radius: 999px;
+  border: 1px solid var(--ps-accent-2);
+  background: transparent;
+  color: var(--ps-accent-1);
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-  font-family: var(--vp-font-family-base);
+  transition: background 0.2s;
 }
 
-.tag-toggle-btn:hover {
-  background: rgba(167, 139, 250, 0.22);
+.tag-toggle-btn:hover { background: var(--ps-accent-soft); }
+
+.tag-palette { display: flex; flex-wrap: wrap; gap: var(--ps-space-1); padding-top: var(--ps-space-1); }
+
+/* Count */
+.ql-count {
+  font-family: var(--ps-font-mono);
+  font-size: var(--ps-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ps-ink-3);
+  margin: 0 0 var(--ps-space-5);
 }
 
-.tag-palette {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  padding-top: 0.25rem;
+/* Empty */
+.ql-empty {
+  padding: var(--ps-space-7) var(--ps-space-4);
+  text-align: center;
+  color: var(--ps-ink-3);
+  font-size: var(--ps-text-sm);
+  border: 1px dashed var(--ps-border);
+  border-radius: var(--ps-radius-md);
 }
 
-/* Results info */
-.ql-results-info {
-  font-size: 0.85rem;
-  color: var(--vp-c-text-3);
-  margin-bottom: 0.85rem;
+/* Group */
+.ql-group {
+  margin-bottom: var(--ps-space-7);
 }
 
-.ql-results-info strong {
-  color: var(--vp-c-brand-1);
-}
-
-/* Table */
-.ql-table-wrapper {
-  border: 1px solid var(--vp-c-border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.ql-row {
-  display: grid;
-  grid-template-columns: 64px 1fr 60px 160px;
-  align-items: center;
-  gap: 0;
-}
-
-.ql-table-header {
-  padding: 0.75rem 1rem;
-  background: var(--vp-c-bg-soft);
-  border-bottom: 1px solid var(--vp-c-border);
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--vp-c-brand-1);
-  letter-spacing: 0.03em;
-}
-
-.ql-row--item {
-  display: grid;
-  grid-template-columns: 64px 1fr 60px 160px;
-  align-items: center;
-  padding: 0.9rem 1rem;
-  background: var(--vp-c-bg-alt);
-  border-bottom: 1px solid var(--vp-c-border);
-  text-decoration: none;
-  transition: background 0.2s, transform 0.15s;
-  color: inherit;
-}
-
-.ql-row--item:last-child {
-  border-bottom: none;
-}
-
-.ql-row--item:hover {
-  background: var(--vp-c-bg-elv);
-  transform: translateX(2px);
-}
-
-.col-id {
-  display: flex;
-  align-items: center;
-}
-
-.note-id {
-  font-size: 0.75rem;
+.ql-group-label {
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-xs);
   font-weight: 700;
-  font-family: var(--vp-font-family-mono);
-  color: var(--vp-c-brand-1);
-  background: var(--vp-c-brand-soft);
-  border-radius: 6px;
-  padding: 0.2rem 0.45rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ps-accent-1);
+  margin: 0 0 var(--ps-space-4);
+  padding-bottom: var(--ps-space-2);
+  border-bottom: 1px solid var(--ps-rule);
 }
 
-.col-question {
+/* List */
+.ql-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ql-item {
+  border-bottom: 1px solid var(--ps-rule);
+}
+
+.ql-item:last-child { border-bottom: none; }
+
+.ql-link {
+  display: grid;
+  grid-template-columns: 56px 1fr 32px;
+  align-items: baseline;
+  gap: var(--ps-space-4);
+  padding: var(--ps-space-4) var(--ps-space-2);
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.ql-link:hover { background: var(--ps-bg-soft); }
+
+.ql-num {
+  font-family: var(--ps-font-mono);
+  font-size: var(--ps-text-xs);
+  color: var(--ps-ink-3);
+  letter-spacing: 0.05em;
+}
+
+.ql-body {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding-right: 1rem;
+  gap: var(--ps-space-1);
+  min-width: 0;
 }
 
-.note-title {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--vp-c-text-1);
-  line-height: 1.4;
-}
-
-.ql-row--item:hover .note-title {
-  color: var(--vp-c-brand-1);
-}
-
-.note-question {
-  font-size: 0.75rem;
-  color: var(--vp-c-text-3);
-  line-height: 1.4;
-}
-
-.col-status {
-  font-size: 0.9rem;
-  text-align: center;
-}
-
-.col-category {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.category-badge {
-  font-size: 0.7rem;
+.ql-heading {
+  font-family: var(--ps-font-serif);
+  font-size: var(--ps-text-lg);
   font-weight: 600;
-  color: var(--vp-c-text-2);
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-border);
-  border-radius: 6px;
-  padding: 0.2rem 0.5rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 140px;
+  color: var(--ps-ink-1);
+  line-height: 1.4;
 }
 
-.ql-empty {
-  padding: 3rem 1rem;
-  text-align: center;
-  color: var(--vp-c-text-3);
-  font-size: 0.9rem;
+.ql-link:hover .ql-heading { color: var(--ps-accent-1); }
+
+.ql-question {
+  font-family: var(--ps-font-sans);
+  font-size: var(--ps-text-sm);
+  color: var(--ps-ink-3);
+  line-height: 1.5;
 }
+
+.ql-status {
+  justify-self: end;
+  font-size: var(--ps-text-base);
+  line-height: 1;
+}
+
+.status--done { color: var(--ps-accent-1); }
+.status--wip  { color: #f59e0b; }
+.status--todo { color: var(--ps-ink-3); }
 
 /* Mobile */
-@media (max-width: 768px) {
-  .question-list {
-    padding: 1.5rem 1rem 3rem;
-  }
-
-  .ql-title {
-    font-size: 1.6rem;
-  }
-
-  .ql-filters {
-    padding: 1rem;
-  }
-
-  .filter-row {
-    flex-direction: column;
-  }
-
-  .filter-select,
-  .filter-input {
-    min-width: unset;
-    width: 100%;
-  }
-
-  .ql-row {
-    grid-template-columns: 52px 1fr 48px;
-  }
-
-  .ql-table-header .col-category,
-  .ql-row--item .col-category {
-    display: none;
-  }
-
-  .ql-row--item {
-    grid-template-columns: 52px 1fr 48px;
-  }
-
-  .note-title {
-    font-size: 0.85rem;
-  }
+@media (max-width: 767px) {
+  .question-list { padding: var(--ps-space-5) var(--ps-space-4) var(--ps-space-7); }
+  .ql-title { font-size: var(--ps-text-xl); }
+  .filter-row { flex-direction: column; align-items: stretch; }
+  .filter-select, .filter-input { min-width: unset; width: 100%; }
+  .ql-link { grid-template-columns: 44px 1fr 24px; gap: var(--ps-space-3); padding: var(--ps-space-4) 0; }
+  .ql-heading { font-size: var(--ps-text-md); }
 }
 </style>

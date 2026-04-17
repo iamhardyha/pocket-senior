@@ -86,7 +86,6 @@ html.dark {
 
   --ps-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --ps-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --ps-shadow-glow: 0 8px 32px var(--ps-accent-soft);
 }
 
 /* ── VitePress variable bridge ──
