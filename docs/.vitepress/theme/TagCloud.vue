@@ -162,7 +162,7 @@ const totalTagCount = computed(() => allTags.value.length)
   transform: translateX(-50%);
   width: 600px;
   height: 350px;
-  background: radial-gradient(ellipse, rgba(124, 58, 237, 0.12) 0%, transparent 70%);
+  background: radial-gradient(ellipse, var(--ps-accent-soft) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -175,9 +175,10 @@ const totalTagCount = computed(() => allTags.value.length)
 }
 
 .tagcloud-title {
+  font-family: var(--ps-font-serif);
   font-size: 2.5rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #e8e4f0 30%, #a78bfa 70%);
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--ps-ink-1) 30%, var(--ps-accent-1) 70%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -244,18 +245,18 @@ const totalTagCount = computed(() => allTags.value.length)
   border-color: var(--vp-c-brand-2);
   background: var(--vp-c-bg-soft);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(167, 139, 250, 0.1);
+  box-shadow: 0 4px 12px var(--ps-accent-soft);
 }
 
 .tag-pill--active {
   background: var(--vp-c-brand-soft);
   border-color: var(--vp-c-brand-1);
-  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.25);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ps-accent-1) 25%, transparent);
 }
 
 .tag-pill--active:hover {
-  background: rgba(167, 139, 250, 0.2);
-  box-shadow: 0 4px 14px rgba(167, 139, 250, 0.18);
+  background: color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
+  box-shadow: 0 4px 14px var(--ps-accent-soft);
 }
 
 .tag-name {
@@ -274,27 +275,28 @@ const totalTagCount = computed(() => allTags.value.length)
 }
 
 .tag-count {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: var(--vp-c-text-3);
-  background: var(--vp-c-bg-soft);
-  border-radius: 10px;
-  padding: 0.05rem 0.45rem;
-  transition: color 0.2s, background 0.2s;
+  font-family: var(--ps-font-serif);
+  font-style: italic;
+  font-size: var(--ps-text-sm);
+  font-weight: 600;
+  color: var(--ps-ink-3);
+  background: transparent;
+  padding: 0 var(--ps-space-1);
+  transition: color 0.2s;
 }
 
 .tag-pill--active .tag-count {
-  color: var(--vp-c-brand-1);
-  background: rgba(167, 139, 250, 0.15);
+  color: var(--ps-accent-1);
+  background: transparent;
 }
 
 /* ── Selected bar ── */
 .selected-bar {
   position: relative;
   z-index: 1;
-  background: linear-gradient(135deg, rgba(167, 139, 250, 0.06), rgba(124, 58, 237, 0.04));
-  border: 1px solid rgba(167, 139, 250, 0.2);
-  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--ps-rule);
+  border-radius: var(--ps-radius-md);
   padding: 0.85rem 1.25rem;
   margin-bottom: 1.75rem;
 }
@@ -315,6 +317,17 @@ const totalTagCount = computed(() => allTags.value.length)
   flex-shrink: 0;
 }
 
+.selected-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--ps-space-2);
+  border-radius: 50%;
+  background: var(--ps-accent-1);
+  vertical-align: middle;
+}
+
 .selected-tags {
   display: flex;
   flex-wrap: wrap;
@@ -330,7 +343,7 @@ const totalTagCount = computed(() => allTags.value.length)
   font-weight: 500;
   color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
-  border: 1px solid rgba(167, 139, 250, 0.3);
+  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 30%, transparent);
   border-radius: 14px;
   padding: 0.2rem 0.6rem 0.2rem 0.75rem;
 }
@@ -432,7 +445,7 @@ const totalTagCount = computed(() => allTags.value.length)
 .result-card:hover {
   border-color: var(--vp-c-brand-1);
   transform: translateX(4px);
-  box-shadow: 0 4px 20px rgba(167, 139, 250, 0.1);
+  box-shadow: 0 4px 20px var(--ps-accent-soft);
 }
 
 .result-card-inner {
@@ -478,7 +491,7 @@ const totalTagCount = computed(() => allTags.value.length)
 .result-tag--active {
   color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
-  border-color: rgba(167, 139, 250, 0.3);
+  border-color: color-mix(in srgb, var(--ps-accent-1) 30%, transparent);
 }
 
 .result-arrow {

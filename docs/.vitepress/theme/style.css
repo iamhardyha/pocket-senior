@@ -196,6 +196,9 @@
 
 .VPSidebarItem.is-active > .item .link > .text {
   color: var(--vp-c-brand-1);
+  font-family: var(--ps-font-serif);
+  font-style: italic;
+  font-weight: 600;
 }
 
 .VPSidebarItem .item .link:hover .text {
@@ -291,13 +294,13 @@
 }
 
 .changelog-container h1 {
+  font-family: var(--ps-font-serif);
   font-size: 2rem;
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, var(--ps-ink-1), var(--ps-accent-1));
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--ps-ink-1);
+  background: none;
+  -webkit-text-fill-color: initial;
 }
 
 .changelog-container > p {
@@ -319,7 +322,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: linear-gradient(180deg, var(--vp-c-brand-1) 0%, var(--vp-c-border) 100%);
+  background: linear-gradient(180deg, var(--ps-accent-1) 0%, var(--ps-border) 100%);
 }
 
 .changelog-entry {
@@ -332,25 +335,25 @@
   position: absolute;
   left: -2rem;
   top: 0.35rem;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--vp-c-brand-1);
-  border: 2px solid var(--vp-c-bg);
-  box-shadow: 0 0 0 3px var(--vp-c-brand-soft);
+  background: var(--ps-accent-1);
+  border: 2px solid var(--ps-bg);
+  box-shadow: 0 0 0 2px var(--ps-accent-soft);
   transform: translateX(-4px);
 }
 
 .date-badge {
   display: inline-block;
-  font-size: 0.8rem;
-  font-weight: 700;
-  font-family: var(--vp-font-family-mono);
-  color: var(--vp-c-brand-1);
-  background: var(--vp-c-brand-soft);
-  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
-  border-radius: 8px;
-  padding: 0.2rem 0.7rem;
+  font-family: var(--ps-font-serif);
+  font-style: italic;
+  font-size: var(--ps-text-sm);
+  font-weight: 600;
+  color: var(--ps-accent-1);
+  background: transparent;
+  border: none;
+  padding: 0;
   margin-bottom: 0.75rem;
 }
 
@@ -416,9 +419,9 @@
 }
 
 .changelog-link:hover {
-  border-color: var(--vp-c-brand-1) !important;
-  transform: translateX(4px);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
+  border-color: var(--ps-accent-1) !important;
+  transform: none;
+  box-shadow: var(--ps-shadow-sm);
 }
 
 .link-category {

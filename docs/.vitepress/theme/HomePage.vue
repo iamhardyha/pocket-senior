@@ -1,23 +1,17 @@
 <script setup lang="ts">
-interface Category {
-  readonly title: string
-  readonly desc: string
-  readonly link: string
-  readonly icon: string
-  readonly count: number
-  readonly gradient: string
-}
+import { computed } from 'vue'
+import { data as notes } from '../data/notes.data'
+import { CATEGORIES } from './categories'
 
-const categories: readonly Category[] = [
-  { title: '트래픽 & 장애 대응', desc: '대용량 트래픽, 스파이크, 부하 분산', link: '/pocket-senior/traffic/', icon: '🔥', count: 5, gradient: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(167,139,250,0.08))' },
-  { title: '데이터 정합성 & 동시성', desc: '락, 멱등성, 무결성, 정합성 설계', link: '/pocket-senior/concurrency/', icon: '🔒', count: 5, gradient: 'linear-gradient(135deg, rgba(59,130,246,0.12), rgba(167,139,250,0.08))' },
-  { title: '장애 시나리오', desc: 'Redis, DB, 외부 API 장애 대응', link: '/pocket-senior/failure/', icon: '🛡️', count: 6, gradient: 'linear-gradient(135deg, rgba(34,197,94,0.12), rgba(167,139,250,0.08))' },
-  { title: '데이터베이스', desc: 'N+1, 쿼리 튜닝, 트랜잭션, 샤딩', link: '/pocket-senior/database/', icon: '🗄️', count: 10, gradient: 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(167,139,250,0.08))' },
-  { title: '아키텍처 & 비동기', desc: 'MSA, Kafka, 메시지큐, 분산 트랜잭션', link: '/pocket-senior/architecture/', icon: '🏗️', count: 7, gradient: 'linear-gradient(135deg, rgba(168,85,247,0.12), rgba(167,139,250,0.08))' },
-  { title: '인프라 & 마이그레이션', desc: 'JDK 마이그레이션, 네트워크', link: '/pocket-senior/infra/', icon: '⚙️', count: 2, gradient: 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(167,139,250,0.08))' },
-]
+const categories = computed(() =>
+  CATEGORIES.map((c) => ({
+    ...c,
+    link: `/pocket-senior/${c.key}/`,
+    count: notes.filter((n) => n.category === c.key).length,
+  })),
+)
 
-const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
+const totalNotes = computed(() => notes.length)
 </script>
 
 <template>
@@ -60,7 +54,7 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
       <div class="categories-grid">
         <a
           v-for="cat in categories"
-          :key="cat.title"
+          :key="cat.key"
           :href="cat.link"
           class="category-card"
           :style="{ background: cat.gradient }"
@@ -69,7 +63,7 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
             <span class="card-icon">{{ cat.icon }}</span>
             <span class="card-count">{{ cat.count }}개</span>
           </div>
-          <h3 class="card-title">{{ cat.title }}</h3>
+          <h3 class="card-title">{{ cat.label }}</h3>
           <p class="card-desc">{{ cat.desc }}</p>
           <span class="card-arrow">→</span>
         </a>
@@ -95,7 +89,7 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
   transform: translateX(-50%);
   width: 600px;
   height: 400px;
-  background: radial-gradient(ellipse, rgba(124, 58, 237, 0.15) 0%, transparent 70%);
+  background: radial-gradient(ellipse, var(--ps-accent-soft) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -115,16 +109,17 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
   letter-spacing: 0.15em;
   color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
-  border: 1px solid rgba(167, 139, 250, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
   border-radius: 20px;
   padding: 0.35rem 1rem;
   margin-bottom: 1.5rem;
 }
 
 .hero-title {
+  font-family: var(--ps-font-serif);
   font-size: 3.5rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #e8e4f0 30%, #a78bfa 70%);
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--ps-ink-1) 30%, var(--ps-accent-1) 70%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -235,14 +230,14 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(180deg, transparent 60%, rgba(167, 139, 250, 0.04) 100%);
+  background: linear-gradient(180deg, transparent 60%, var(--ps-accent-soft) 100%);
   pointer-events: none;
 }
 
 .category-card:hover {
   border-color: var(--vp-c-brand-1);
   transform: translateY(-3px);
-  box-shadow: 0 8px 32px rgba(167, 139, 250, 0.12);
+  box-shadow: 0 8px 32px var(--ps-accent-soft);
 }
 
 .card-header {
@@ -334,8 +329,8 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
   align-items: center;
   gap: 0.65rem;
   text-decoration: none;
-  background: linear-gradient(135deg, rgba(52, 211, 153, 0.06), rgba(167, 139, 250, 0.04));
-  border: 1px solid rgba(52, 211, 153, 0.2);
+  background: var(--ps-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 25%, transparent);
   border-radius: 10px;
   padding: 0.7rem 1.1rem;
   margin-bottom: 1.5rem;
@@ -346,21 +341,21 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
 
 .recent-update:hover {
   border-color: var(--vp-c-brand-1);
-  box-shadow: 0 2px 16px rgba(167, 139, 250, 0.08);
+  box-shadow: 0 2px 16px var(--ps-accent-soft);
 }
 
 .update-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #34d399;
+  background: var(--ps-accent-1);
   flex-shrink: 0;
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
-  50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--ps-accent-soft); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 4px transparent; }
 }
 
 .update-label {
@@ -368,8 +363,8 @@ const totalNotes = categories.reduce((sum, cat) => sum + cat.count, 0)
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.1);
+  color: var(--ps-accent-1);
+  background: var(--ps-accent-soft);
   border-radius: 4px;
   padding: 0.1rem 0.4rem;
   flex-shrink: 0;
