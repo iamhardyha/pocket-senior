@@ -53,12 +53,11 @@ const totalTagCount = computed(() => allTags.value.length)
 
 <template>
   <div class="tagcloud-container">
-    <!-- Background glow -->
-    <div class="hero-glow" />
-
-    <!-- Header -->
+    <!-- Header (C 톤: 명조 표제 + 굵은 괘선) -->
     <section class="tagcloud-header">
+      <div class="tc-kicker">Index</div>
       <h1 class="tagcloud-title">태그 목록</h1>
+      <div class="tc-rule" />
       <p class="tagcloud-desc">
         태그를 선택하면 관련 노트를 필터링합니다. 여러 태그를 선택하면
         <strong>AND 조건</strong>으로 교집합 노트만 표시됩니다.
@@ -148,43 +147,44 @@ const totalTagCount = computed(() => allTags.value.length)
 
 <style scoped>
 .tagcloud-container {
-  max-width: 960px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 0 1.5rem 4rem;
   position: relative;
 }
 
-/* ── Glow ── */
-.hero-glow {
-  position: absolute;
-  top: -100px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 600px;
-  height: 350px;
-  background: radial-gradient(ellipse, var(--ps-accent-soft) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* ── Header ── */
+/* ── Header (C 톤) ── */
 .tagcloud-header {
-  padding: 4rem 0 2.5rem;
+  padding: 3.5rem 0 2rem;
   position: relative;
   z-index: 1;
+}
+
+.tc-kicker {
+  font-family: var(--ps-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ps-ink-3);
+  margin-bottom: 0.75rem;
 }
 
 .tagcloud-title {
   font-family: var(--ps-font-serif);
   font-size: 2.5rem;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--ps-ink-1) 30%, var(--ps-accent-1) 70%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin: 0 0 0.75rem;
-  line-height: 1.2;
+  color: var(--ps-ink-1);
+  background: none;
+  -webkit-text-fill-color: initial;
+  margin: 0;
+  line-height: 1.1;
   letter-spacing: -0.03em;
+}
+
+.tc-rule {
+  height: 2px;
+  background: var(--ps-ink-1);
+  margin: 1.1rem 0 1.25rem;
 }
 
 .tagcloud-desc {
@@ -206,8 +206,9 @@ const totalTagCount = computed(() => allTags.value.length)
 }
 
 .meta-badge {
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-family: var(--ps-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
   color: var(--vp-c-text-3);
   background: var(--vp-c-bg-elv);
   border: 1px solid var(--vp-c-border);
@@ -367,8 +368,8 @@ const totalTagCount = computed(() => allTags.value.length)
 }
 
 .remove-tag:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
+  color: #d65151;
+  background: rgba(214, 81, 81, 0.12);
 }
 
 .clear-btn {
@@ -407,7 +408,8 @@ const totalTagCount = computed(() => allTags.value.length)
 }
 
 .results-title {
-  font-size: 1.1rem;
+  font-family: var(--ps-font-serif);
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--vp-c-text-1);
   margin: 0;
@@ -455,7 +457,10 @@ const totalTagCount = computed(() => allTags.value.length)
 
 .result-category {
   display: inline-block;
-  font-size: 0.68rem;
+  font-family: var(--ps-font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   font-weight: 600;
   color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
@@ -538,16 +543,11 @@ const totalTagCount = computed(() => allTags.value.length)
   }
 
   .tagcloud-header {
-    padding: 3rem 0 2rem;
+    padding: 2.5rem 0 1.75rem;
   }
 
   .tagcloud-title {
-    font-size: 1.85rem;
-  }
-
-  .hero-glow {
-    width: 300px;
-    height: 220px;
+    font-size: 1.95rem;
   }
 
   .selected-inner {

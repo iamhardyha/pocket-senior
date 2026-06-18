@@ -1,5 +1,28 @@
 /* Tokens는 tokens.css에서 정의. 이 파일은 tokens 기반 컴포넌트 스타일만 담당. */
 
+/* ── Paper grain (handbook texture) ──
+ * body::before로 전 화면에 은은한 종이결. 콘텐츠는 #app(z-index:1) 위에. */
+html {
+  background: var(--vp-c-bg);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: var(--ps-paper);
+  background-repeat: repeat;
+  opacity: var(--ps-paper-opacity);
+  mix-blend-mode: var(--ps-paper-blend);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+}
+
 /* ── Nav blur effect ── */
 .VPNav {
   backdrop-filter: blur(12px);
@@ -73,7 +96,7 @@
   margin-top: var(--ps-space-5);
 }
 
-/* Lead paragraph — first <p> of document body */
+/* Lead paragraph — first <p> of document body, with drop cap */
 .vp-doc > div > p:first-of-type {
   font-family: var(--ps-font-serif);
   font-size: var(--ps-text-md);
@@ -82,13 +105,24 @@
   line-height: 1.6;
 }
 
+.vp-doc > div > p:first-of-type::first-letter {
+  font-style: normal;
+  float: left;
+  font-family: var(--ps-font-serif);
+  font-weight: 700;
+  font-size: 3.1em;
+  line-height: 0.82;
+  color: var(--ps-accent-1);
+  padding: 0.05em 0.12em 0 0;
+}
+
 /* Blockquote — 핵심 질문 editorial */
 .vp-doc blockquote {
   font-family: var(--ps-font-serif);
   font-style: italic;
   font-size: var(--ps-text-md);
   background: var(--ps-bg-soft);
-  border-left: 4px solid var(--ps-accent-1);
+  border-left: 3px solid var(--ps-accent-1);
   border-radius: 0 var(--ps-radius-md) var(--ps-radius-md) 0;
   padding: var(--ps-space-4) var(--ps-space-5);
   margin: var(--ps-space-5) auto;
@@ -180,12 +214,13 @@
 /* Paragraph spacing */
 .vp-doc p { margin: var(--ps-space-4) auto; }
 
-/* Mobile type downshift */
+/* Mobile type — 장문 학습 콘텐츠라 본문 크기는 유지(가독성 우선) */
 @media (max-width: 767px) {
-  .vp-doc { font-size: 1rem; }
+  .vp-doc { font-size: var(--ps-text-base); }
   .vp-doc h1 { font-size: var(--ps-text-xl); }
   .vp-doc h2 { font-size: var(--ps-text-lg); }
   .vp-doc > div > p:first-of-type { font-size: var(--ps-text-base); }
+  .vp-doc > div > p:first-of-type::first-letter { font-size: 2.7em; }
   .vp-doc blockquote { font-size: var(--ps-text-base); padding: var(--ps-space-3) var(--ps-space-4); }
 }
 
@@ -213,13 +248,14 @@
 }
 
 .category-index h1 {
+  font-family: var(--ps-font-serif);
   font-size: 2rem;
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, var(--ps-ink-1), var(--ps-accent-1));
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--ps-ink-1);
+  background: none;
+  -webkit-text-fill-color: initial;
+  letter-spacing: var(--ps-tracking-display);
 }
 
 .category-index > p:first-of-type {
@@ -251,11 +287,12 @@
 .note-card:hover {
   border-color: var(--vp-c-brand-1);
   transform: translateX(4px);
-  box-shadow: 0 4px 20px color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
+  box-shadow: 0 4px 20px var(--ps-accent-soft);
 }
 
 .note-card .note-number {
-  font-size: 0.8rem;
+  font-family: var(--ps-font-serif);
+  font-size: 0.9rem;
   font-weight: 700;
   color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
@@ -387,9 +424,9 @@
 }
 
 .tag-fix {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.12);
-  border: 1px solid rgba(251, 191, 36, 0.25);
+  color: #c98a2e;
+  background: rgba(201, 138, 46, 0.12);
+  border: 1px solid rgba(201, 138, 46, 0.25);
 }
 
 .tag-launch {
@@ -497,15 +534,15 @@
 }
 
 .sev-high {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #d65151;
+  background: rgba(214, 81, 81, 0.12);
+  border: 1px solid rgba(214, 81, 81, 0.25);
 }
 
 .sev-med {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #c98a2e;
+  background: rgba(201, 138, 46, 0.12);
+  border: 1px solid rgba(201, 138, 46, 0.25);
 }
 
 /* ── Mobile Optimization ── */

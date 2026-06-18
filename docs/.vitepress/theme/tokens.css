@@ -1,24 +1,25 @@
 /* ============================================================
- * Pocket Senior — Design Tokens
+ * Pocket Senior — Design Tokens (v2 · 감성 라벤더 리뉴얼)
  * Light(default) & Dark(html.dark) palettes + typography/spacing.
+ * 채도를 낮춘 단일 라벤더 색조. 보조 텍스트 대비 ↑ (WCAG AA).
  * All components should reference these tokens, not raw values.
  * ============================================================ */
 
 :root {
-  /* ── Palette (Light — editorial cream paper) ── */
-  --ps-bg: #faf7f0;
-  --ps-bg-alt: #f3efe4;
-  --ps-bg-elv: #ffffff;
-  --ps-bg-soft: #ede8d9;
-  --ps-ink-1: #1b1726;
-  --ps-ink-2: #4a4259;
-  --ps-ink-3: #847b95;
-  --ps-accent-1: #6d4dd8;
-  --ps-accent-2: #5b3dc7;
-  --ps-accent-3: #4a2cb0;
-  --ps-accent-soft: rgba(109, 77, 216, 0.12);
-  --ps-border: #e2dcc8;
-  --ps-rule: #d9d2bc;
+  /* ── Palette (Light — lavender paper) ── */
+  --ps-bg: #f5f1f4;
+  --ps-bg-alt: #efe8ee;
+  --ps-bg-elv: #fdfbfd;
+  --ps-bg-soft: #e9e0e9;
+  --ps-ink-1: #2f2a35;
+  --ps-ink-2: #5b5563;
+  --ps-ink-3: #746e80;        /* AA on --ps-bg (~4.6:1) */
+  --ps-accent-1: #7a5fa6;     /* AA on light bg for links/labels */
+  --ps-accent-2: #6b4f97;
+  --ps-accent-3: #5b4087;
+  --ps-accent-soft: rgba(122, 77, 166, 0.12);
+  --ps-border: #e3dbe6;
+  --ps-rule: #c9bcd9;
 
   /* ── Typography Scale ── */
   --ps-text-xs: 0.75rem;
@@ -63,29 +64,37 @@
   --ps-width-wide: 1200px;
 
   /* ── Shadow ── */
-  --ps-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --ps-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --ps-shadow-sm: 0 1px 2px rgba(47, 42, 53, 0.06);
+  --ps-shadow-md: 0 4px 16px rgba(47, 42, 53, 0.08);
   --ps-shadow-glow: 0 8px 32px var(--ps-accent-soft);
+
+  /* ── Paper grain (subtle handbook texture) ── */
+  --ps-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --ps-paper-opacity: 0.045;
+  --ps-paper-blend: multiply;
 }
 
 html.dark {
-  /* ── Palette (Dark — editorial warm ink) ── */
-  --ps-bg: #14121c;
-  --ps-bg-alt: #1a1826;
-  --ps-bg-elv: #221f32;
-  --ps-bg-soft: #262338;
-  --ps-ink-1: #ece7f3;
-  --ps-ink-2: #b5aec8;
-  --ps-ink-3: #7d7594;
-  --ps-accent-1: #b89dfa;
-  --ps-accent-2: #9a77f5;
-  --ps-accent-3: #7c3aed;
-  --ps-accent-soft: rgba(184, 157, 250, 0.14);
-  --ps-border: #2c2844;
-  --ps-rule: #262338;
+  /* ── Palette (Dark — lavender ink) ── */
+  --ps-bg: #18151d;
+  --ps-bg-alt: #1e1a24;
+  --ps-bg-elv: #241f2c;
+  --ps-bg-soft: #2a2435;
+  --ps-ink-1: #ece7f1;
+  --ps-ink-2: #b3aabf;
+  --ps-ink-3: #8a8295;
+  --ps-accent-1: #c0a6ec;
+  --ps-accent-2: #ad8ee6;
+  --ps-accent-3: #9a77f5;
+  --ps-accent-soft: rgba(192, 166, 236, 0.14);
+  --ps-border: #2e2838;
+  --ps-rule: #3a3348;
 
   --ps-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --ps-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+  --ps-paper-opacity: 0.05;
+  --ps-paper-blend: screen;
 }
 
 /* ── VitePress variable bridge ──

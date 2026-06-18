@@ -107,9 +107,11 @@ function toggleTagSelector(): void {
 
 <template>
   <div class="question-list">
-    <!-- Header -->
+    <!-- Header (C 톤: kicker + 명조 표제 + 굵은 괘선) -->
     <header class="ql-header">
+      <div class="ql-kicker">Index</div>
       <h1 class="ql-title">학습 질문 목록</h1>
+      <div class="ql-rule" />
       <p class="ql-desc">카테고리, 상태, 태그, 키워드로 질문을 필터링하세요.</p>
     </header>
 
@@ -202,8 +204,15 @@ function toggleTagSelector(): void {
 /* Header */
 .ql-header {
   margin-bottom: var(--ps-space-6);
-  padding-bottom: var(--ps-space-5);
-  border-bottom: 1px solid var(--ps-rule);
+}
+
+.ql-kicker {
+  font-family: var(--ps-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ps-ink-3);
+  margin-bottom: var(--ps-space-3);
 }
 
 .ql-title {
@@ -212,7 +221,14 @@ function toggleTagSelector(): void {
   font-weight: 700;
   letter-spacing: var(--ps-tracking-display);
   color: var(--ps-ink-1);
-  margin: 0 0 var(--ps-space-2);
+  margin: 0;
+  line-height: 1.1;
+}
+
+.ql-rule {
+  height: 2px;
+  background: var(--ps-ink-1);
+  margin: var(--ps-space-4) 0 var(--ps-space-4);
 }
 
 .ql-desc {
@@ -376,10 +392,11 @@ function toggleTagSelector(): void {
   gap: var(--ps-space-4);
   padding: var(--ps-space-4) var(--ps-space-2);
   text-decoration: none;
+  border-radius: 8px;
   transition: background 0.2s;
 }
 
-.ql-link:hover { background: var(--ps-bg-soft); }
+.ql-link:hover { background: var(--ps-accent-soft); }
 
 .ql-num {
   font-family: var(--ps-font-mono);
@@ -419,7 +436,7 @@ function toggleTagSelector(): void {
 }
 
 .status--done { color: var(--ps-accent-1); }
-.status--wip  { color: #f59e0b; }
+.status--wip  { color: #c98a2e; }
 .status--todo { color: var(--ps-ink-3); }
 
 /* Mobile */

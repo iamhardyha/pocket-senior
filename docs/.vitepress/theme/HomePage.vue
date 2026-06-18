@@ -4,8 +4,9 @@ import { data as notes } from '../data/notes.data'
 import { CATEGORIES } from './categories'
 
 const categories = computed(() =>
-  CATEGORIES.map((c) => ({
+  CATEGORIES.map((c, i) => ({
     ...c,
+    no: String(i + 1).padStart(2, '0'),
     link: `/pocket-senior/${c.key}/`,
     count: notes.filter((n) => n.category === c.key).length,
   })),
@@ -15,378 +16,276 @@ const totalNotes = computed(() => notes.length)
 </script>
 
 <template>
-  <div class="home-container">
-    <!-- Glow effect behind hero -->
-    <div class="hero-glow" />
-
-    <section class="hero-section">
-      <div class="hero-badge">Backend Mini Book</div>
-      <h1 class="hero-title">Pocket Senior</h1>
-      <p class="hero-tagline">출퇴근길에 읽는 백엔드 미니북</p>
-      <p class="hero-desc">
-        애매하게 알고 있던 백엔드 개념들을<br />
-        시니어 관점에서 깊이 있게 정리합니다.
-      </p>
-      <div class="hero-stats">
-        <div class="stat-card">
-          <span class="stat-number">{{ totalNotes }}</span>
-          <span class="stat-label">노트</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-number">{{ categories.length }}</span>
-          <span class="stat-label">카테고리</span>
-        </div>
+  <div class="home-index">
+    <!-- ── Masthead ── -->
+    <header class="masthead">
+      <div class="masthead-main">
+        <div class="masthead-kicker">Backend Mini Book</div>
+        <h1 class="masthead-title">Pocket<br />Senior</h1>
       </div>
-    </section>
+      <p class="masthead-tagline">출퇴근길에 읽는<br />백엔드 미니북</p>
+    </header>
 
-    <a href="/pocket-senior/changelog.html" class="recent-update">
-      <span class="update-dot" />
-      <span class="update-label">최근 업데이트</span>
-      <span class="update-text">DB 단편화와 최적화, 벌크헤드 패턴 추가</span>
-      <span class="update-more">더보기 →</span>
-    </a>
+    <div class="masthead-rule" />
 
-    <section class="categories-section">
-      <div class="section-header">
-        <h2 class="section-title">카테고리</h2>
-        <a href="/pocket-senior/00-질문목록.html" class="section-link">전체 목록 →</a>
-      </div>
-      <div class="categories-grid">
-        <a
-          v-for="cat in categories"
-          :key="cat.key"
-          :href="cat.link"
-          class="category-card"
-          :style="{ background: cat.gradient }"
-        >
-          <div class="card-header">
-            <span class="card-icon">{{ cat.icon }}</span>
-            <span class="card-count">{{ cat.count }}개</span>
-          </div>
-          <h3 class="card-title">{{ cat.label }}</h3>
-          <p class="card-desc">{{ cat.desc }}</p>
-          <span class="card-arrow">→</span>
-        </a>
-      </div>
-    </section>
+    <div class="masthead-meta">
+      <span class="meta-stats">{{ totalNotes }} NOTES · {{ categories.length }} CATEGORIES</span>
+      <a href="/pocket-senior/changelog.html" class="meta-recent">
+        <span class="recent-dot" />
+        최근 — DB 단편화·벌크헤드 패턴 추가
+      </a>
+    </div>
 
+    <!-- ── Numbered index ── -->
+    <nav class="index-list">
+      <a
+        v-for="cat in categories"
+        :key="cat.key"
+        :href="cat.link"
+        class="index-row"
+      >
+        <span class="row-no">{{ cat.no }}</span>
+        <span class="row-body">
+          <span class="row-title">{{ cat.label }}</span>
+          <span class="row-desc">{{ cat.desc }}</span>
+        </span>
+        <span class="row-count">{{ cat.count }}편 <span class="row-arrow">→</span></span>
+      </a>
+    </nav>
+
+    <a href="/pocket-senior/00-질문목록.html" class="index-alllink">전체 질문 목록 →</a>
   </div>
 </template>
 
 <style scoped>
-.home-container {
-  max-width: 960px;
+.home-index {
+  max-width: 900px;
   margin: 0 auto;
-  padding: 0 1.5rem 4rem;
-  position: relative;
+  padding: 3.5rem 1.5rem 5rem;
 }
 
-/* Glow effect */
-.hero-glow {
-  position: absolute;
-  top: -100px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 600px;
-  height: 400px;
-  background: radial-gradient(ellipse, var(--ps-accent-soft) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
+/* ── Masthead ── */
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
 }
 
-.hero-section {
-  text-align: center;
-  padding: 5rem 0 3rem;
-  position: relative;
-  z-index: 1;
-}
-
-.hero-badge {
-  display: inline-block;
-  font-size: 0.75rem;
-  font-weight: 600;
+.masthead-kicker {
+  font-family: var(--ps-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: var(--vp-c-brand-1);
-  background: var(--vp-c-brand-soft);
-  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 20%, transparent);
-  border-radius: 20px;
-  padding: 0.35rem 1rem;
-  margin-bottom: 1.5rem;
+  color: var(--ps-ink-3);
+  margin-bottom: 0.9rem;
 }
 
-.hero-title {
+.masthead-title {
   font-family: var(--ps-font-serif);
-  font-size: 3.5rem;
+  font-size: clamp(3rem, 9vw, 4.75rem);
   font-weight: 700;
-  background: linear-gradient(135deg, var(--ps-ink-1) 30%, var(--ps-accent-1) 70%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  margin: 0 0 0.75rem;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
-}
-
-.hero-tagline {
-  font-size: 1.35rem;
-  color: var(--vp-c-text-2);
-  margin: 0 0 1rem;
-  font-weight: 400;
-}
-
-.hero-desc {
-  color: var(--vp-c-text-3);
-  line-height: 1.8;
-  margin: 0 0 2rem;
-  font-size: 1rem;
-}
-
-.hero-stats {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-}
-
-.stat-card {
-  background: var(--vp-c-bg-elv);
-  border: 1px solid var(--vp-c-border);
-  border-radius: 12px;
-  padding: 0.75rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-.stat-number {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--vp-c-brand-1);
-}
-
-.stat-label {
-  font-size: 0.75rem;
-  color: var(--vp-c-text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.categories-section {
-  padding-top: 1rem;
-  position: relative;
-  z-index: 1;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.25rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--vp-c-border);
-}
-
-.section-title {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--vp-c-text-1);
+  color: var(--ps-ink-1);
   margin: 0;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  /* override default gradient-text */
+  background: none;
+  -webkit-text-fill-color: initial;
 }
 
-.section-link {
-  font-size: 0.85rem;
-  color: var(--vp-c-text-3);
-  text-decoration: none;
-  transition: color 0.2s;
+.masthead-tagline {
+  font-family: var(--ps-font-serif);
+  font-style: italic;
+  font-size: 1.05rem;
+  color: var(--ps-ink-2);
+  margin: 0 0 0.5rem;
+  text-align: right;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
-.section-link:hover {
-  color: var(--vp-c-brand-1);
+.masthead-rule {
+  height: 2px;
+  background: var(--ps-ink-1);
+  margin-top: 1.5rem;
 }
 
-.categories-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1rem;
-}
-
-.category-card {
-  display: flex;
-  flex-direction: column;
-  text-decoration: none;
-  border: 1px solid var(--vp-c-border);
-  border-radius: 16px;
-  padding: 1.5rem;
-  transition: border-color 0.3s, transform 0.2s, box-shadow 0.3s;
-  position: relative;
-  overflow: hidden;
-}
-
-.category-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(180deg, transparent 60%, var(--ps-accent-soft) 100%);
-  pointer-events: none;
-}
-
-.category-card:hover {
-  border-color: var(--vp-c-brand-1);
-  transform: translateY(-3px);
-  box-shadow: 0 8px 32px var(--ps-accent-soft);
-}
-
-.card-header {
+.masthead-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.65rem;
+  font-family: var(--ps-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
 }
 
-.card-icon {
-  font-size: 1.75rem;
+.meta-stats {
+  color: var(--ps-ink-3);
 }
 
-.card-count {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--vp-c-brand-1);
-  background: var(--vp-c-brand-soft);
-  border-radius: 8px;
-  padding: 0.2rem 0.6rem;
-}
-
-.card-title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--vp-c-text-1);
-  margin: 0 0 0.4rem;
-}
-
-.card-desc {
-  font-size: 0.8rem;
-  color: var(--vp-c-text-3);
-  flex: 1;
-  margin: 0 0 0.75rem;
-  line-height: 1.6;
-}
-
-.card-arrow {
-  font-size: 0.9rem;
-  color: var(--vp-c-text-3);
-  transition: transform 0.2s, color 0.2s;
-}
-
-.category-card:hover .card-arrow {
-  transform: translateX(4px);
-  color: var(--vp-c-brand-1);
-}
-
-@media (max-width: 768px) {
-  .hero-title {
-    font-size: 2.25rem;
-  }
-
-  .hero-tagline {
-    font-size: 1.1rem;
-  }
-
-  .hero-section {
-    padding: 3rem 0 2rem;
-  }
-
-  .hero-glow {
-    width: 300px;
-    height: 250px;
-  }
-
-  .categories-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .home-container {
-    padding: 0 1rem 3rem;
-  }
-
-  .recent-update {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
-  }
-
-  .update-more {
-    margin-left: 0;
-  }
-}
-
-/* ── Recent Update Banner ── */
-.recent-update {
-  display: flex;
+.meta-recent {
+  display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem;
+  color: var(--ps-accent-1);
   text-decoration: none;
-  background: var(--ps-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--ps-accent-1) 25%, transparent);
-  border-radius: 10px;
-  padding: 0.7rem 1.1rem;
-  margin-bottom: 1.5rem;
-  position: relative;
-  z-index: 1;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition: opacity 0.2s;
 }
 
-.recent-update:hover {
-  border-color: var(--vp-c-brand-1);
-  box-shadow: 0 2px 16px var(--ps-accent-soft);
+.meta-recent:hover {
+  opacity: 0.7;
 }
 
-.update-dot {
-  width: 7px;
-  height: 7px;
+.recent-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--ps-accent-1);
   flex-shrink: 0;
-  animation: pulse-dot 2s ease-in-out infinite;
+  animation: ps-pulse 2.4s ease-in-out infinite;
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--ps-accent-soft); }
-  50% { opacity: 0.7; box-shadow: 0 0 0 4px transparent; }
+@keyframes ps-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
-.update-label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ps-accent-1);
+/* ── Numbered index ── */
+.index-list {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.index-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.35rem 0.75rem;
+  text-decoration: none;
+  border-bottom: 1px solid var(--ps-border);
+  border-radius: 8px;
+  transition: background 0.2s, padding-left 0.2s;
+}
+
+.index-row:hover {
   background: var(--ps-accent-soft);
-  border-radius: 4px;
-  padding: 0.1rem 0.4rem;
-  flex-shrink: 0;
+  padding-left: 1.1rem;
 }
 
-.update-text {
-  font-size: 0.82rem;
-  color: var(--vp-c-text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.update-more {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--vp-c-text-3);
+.row-no {
+  font-family: var(--ps-font-serif);
+  font-size: 2.1rem;
+  font-weight: 700;
+  color: var(--ps-rule);
+  width: 3.25rem;
   flex-shrink: 0;
   transition: color 0.2s;
 }
 
-.recent-update:hover .update-more {
-  color: var(--vp-c-brand-1);
+.index-row:hover .row-no {
+  color: var(--ps-accent-1);
+}
+
+.row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  display: block;
+  font-family: var(--ps-font-serif);
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--ps-ink-1);
+  letter-spacing: -0.01em;
+  margin-bottom: 0.15rem;
+}
+
+.row-desc {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--ps-ink-3);
+  line-height: 1.5;
+}
+
+.row-count {
+  font-family: var(--ps-font-mono);
+  font-size: 0.78rem;
+  color: var(--ps-accent-1);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.row-arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+}
+
+.index-row:hover .row-arrow {
+  transform: translateX(3px);
+}
+
+.index-alllink {
+  display: inline-block;
+  margin-top: 2rem;
+  font-family: var(--ps-font-mono);
+  font-size: 0.8rem;
+  color: var(--ps-ink-3);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.index-alllink:hover {
+  color: var(--ps-accent-1);
+}
+
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  .home-index {
+    padding: 2.5rem 1.1rem 3.5rem;
+  }
+
+  .masthead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .masthead-tagline {
+    text-align: left;
+    font-size: 1rem;
+  }
+
+  .masthead-meta {
+    font-size: 0.65rem;
+    gap: 0.5rem;
+  }
+
+  .index-row {
+    gap: 1rem;
+    padding: 1.1rem 0.25rem;
+  }
+
+  .index-row:hover {
+    padding-left: 0.25rem;
+  }
+
+  .row-no {
+    font-size: 1.6rem;
+    width: 2.4rem;
+  }
+
+  .row-title {
+    font-size: 1.1rem;
+  }
+
+  .row-desc {
+    font-size: 0.8rem;
+  }
 }
 </style>
