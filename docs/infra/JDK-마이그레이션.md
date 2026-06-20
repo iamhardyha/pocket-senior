@@ -3,6 +3,7 @@ tags: [JDK, 마이그레이션, Spring, Java, 호환성]
 question: "JDK 8 → JDK 21 마이그레이션 고려사항"
 status: 🟢
 order: 1
+slides: true
 ---
 
 # JDK 8 → JDK 21 마이그레이션

@@ -3,6 +3,7 @@ tags: [CDC, Kafka, MySQL, 분산처리, 이벤트]
 question: "CDC (Change Data Capture)"
 status: 🟢
 order: 8
+slides: true
 ---
 
 # CDC (Change Data Capture)

@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>N+1 문제와 조회 최적화 — Pocket Senior 슬라이드</title>
+<meta name="description" content="N+1, fetch join, entity graph, dto projection, QueryDSL — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">N+1과-조회-최적화</span>.md</span></div>
+      <div class="ide-path">database — UTF-8 · LF</div>
+      <a class="tab-back" href="../../database/N+1과-조회-최적화">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">16</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category database · 조회 최적화</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">N+1</span> 문제와<br />조회 최적화<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"N+1 · fetch join · entity graph · DTO · QueryDSL"</span><span class="op">;</span><br />
+          <span class="op">// 각각 무엇이고, 언제 무엇을 고를까?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">N+1은 <span class="em-r">ORM의 원죄</span>다.</div>
+        <div class="sub reveal">해결책은 여러 개 — <span class="hl">상황에 맞는 걸 고르는 것</span>이 실력이다.</div>
+      </div>
+    </section>
+
+    <!-- 3. N+1 문제 코드 -->
+    <section class="slide" data-sec="문제">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>N+1 문제란?</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderService.java</div>
+<pre><span class="ty">List</span>&lt;<span class="ty">Order</span>&gt; orders = orderRepository.<span class="fn">findAll</span>();  <span class="c">// 쿼리 1개</span>
+
+<span class="k">for</span> (<span class="ty">Order</span> o : orders) {
+    o.<span class="fn">getUser</span>().<span class="fn">getName</span>();   <span class="c">// 주문마다 User 쿼리 +1</span>
+    o.<span class="fn">getItems</span>().<span class="fn">size</span>();   <span class="c">// 주문마다 Items 쿼리 +1</span>
+}</pre>
+        </div>
+        <div class="sub reveal">LAZY 로딩된 연관을 <span class="hl">반복문에서 건드릴 때마다</span> 추가 쿼리가 나간다.</div>
+      </div>
+    </section>
+
+    <!-- 4. 쿼리 폭발 -->
+    <section class="slide" data-sec="문제">
+      <div class="buf" style="align-items:flex-start;">
+        <div class="formula reveal">주문 <b>100</b>개 조회 · 1 <span style="color:var(--red)">+</span> 100 <span style="color:var(--red)">+</span> 100 =</div>
+        <div class="bignum reveal">201<span style="font-size:96px; color:var(--fg-dim); font-weight:700;"> 쿼리</span></div>
+        <div class="sub reveal">1개면 될 쿼리가 <span class="hl">201개</span>로 폭발한다. 이것이 N+1.</div>
+      </div>
+    </section>
+
+    <!-- 5. 해결책 5선 맵 -->
+    <section class="slide" data-sec="해결책 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>해결책 5가지, 한눈에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Fetch Join</span><span class="d">1쿼리 · 가장 직관적 <b>(단, 컬렉션 페이징·카티전 함정)</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">@EntityGraph</span><span class="d">어노테이션으로 간편 · <b>LEFT OUTER 고정</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">@BatchSize</span><span class="d">설정만으로 IN절 묶음 · <b>페이징+컬렉션 정석</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">DTO Projection</span><span class="d">필요한 컬럼만 · <b>읽기 전용 최速</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">QueryDSL</span><span class="d">타입 세이프 · <b>동적 쿼리</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. Fetch Join -->
+    <section class="slide" data-sec="① Fetch Join">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① Fetch Join</h2><span class="idx">1 query</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderRepository.java</div>
+<pre><span class="an">@Query</span>(<span class="s">"SELECT o FROM Order o "</span> +
+       <span class="s">"JOIN FETCH o.user "</span> +
+       <span class="s">"JOIN FETCH o.items WHERE o.status = :s"</span>)
+<span class="ty">List</span>&lt;<span class="ty">Order</span>&gt; <span class="fn">findWithDetails</span>(<span class="an">@Param</span>(<span class="s">"s"</span>) <span class="ty">OrderStatus</span> s);</pre>
+        </div>
+        <div class="sub reveal">연관을 <span class="hl">한 방의 JOIN</span>으로 가져온다. 기본 INNER, <span class="hl">LEFT도 직접 선택</span> 가능.</div>
+      </div>
+    </section>
+
+    <!-- 7. 함정 1: 컬렉션 + 페이징 -->
+    <section class="slide" data-sec="① Fetch Join · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>함정 1 — 컬렉션 + 페이징</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            컬렉션 Fetch Join에 페이징을 걸면 <b>HHH000104: applying in memory</b>
+            <span class="dim">전체를 메모리에 올린 뒤 잘라낸다 → OOM 위험. 페이징은 메모리에서 일어난다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 해결: <span class="hl">ToOne만 Fetch Join + ToMany는 @BatchSize</span> (③ 참고)</div>
+      </div>
+    </section>
+
+    <!-- 8. 함정 2: 부모 중복 / DISTINCT -->
+    <section class="slide" data-sec="① Fetch Join · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>함정 2 — 부모 중복과 DISTINCT</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>1:N Fetch Join은 부모 행이 자식 수만큼 중복된다</div>
+<pre><span class="c">// distinct 없이: Order 1이 Item 개수만큼 중복 등장</span>
+<span class="an">@Query</span>(<span class="s">"SELECT o FROM Order o JOIN FETCH o.items"</span>)
+
+<span class="c">// DISTINCT: 앱 레벨에서 중복 부모 제거 (SQL DISTINCT와 별개)</span>
+<span class="an">@Query</span>(<span class="s">"SELECT <span class="g">DISTINCT</span> o FROM Order o JOIN FETCH o.items"</span>)</pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">✅</span>
+          <div class="body"><b>Hibernate 6 / JPA 3.0+</b> 부터는 엔티티 조회 시 중복 제거가 기본 — distinct 없이도 OK <span class="dim">(구버전은 distinct 필수)</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. 함정 3: 다중 컬렉션 -->
+    <section class="slide" data-sec="① Fetch Join · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>함정 3 — 다중 컬렉션</h2></div>
+        <div class="callout reveal">
+          <span class="ico">💥</span>
+          <div class="body">
+            컬렉션을 <b>2개 이상</b> JOIN FETCH → <b>MultipleBagFetchException</b>
+            <span class="dim">Bag(List) 2개의 카티전 곱을 막으려 Hibernate가 던지는 방어 예외. Set·@OrderColumn으로 피해도 진짜 카티전 곱이 터진다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 해결: <span class="hl">하나만 Fetch Join + 나머지는 @BatchSize</span></div>
+      </div>
+    </section>
+
+    <!-- 10. @EntityGraph -->
+    <section class="slide" data-sec="② @EntityGraph">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② @EntityGraph</h2><span class="idx">LEFT OUTER 고정</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderRepository.java</div>
+<pre><span class="an">@EntityGraph</span>(attributePaths = {<span class="s">"user"</span>, <span class="s">"items"</span>})
+<span class="an">@Query</span>(<span class="s">"SELECT o FROM Order o WHERE o.status = :s"</span>)
+<span class="ty">List</span>&lt;<span class="ty">Order</span>&gt; <span class="fn">findByStatus</span>(<span class="an">@Param</span>(<span class="s">"s"</span>) <span class="ty">OrderStatus</span> s);</pre>
+        </div>
+        <div class="sub reveal">JPQL 없이 연관 로딩. 단 <span class="hl">컬렉션을 포함하면 Fetch Join과 같은 함정</span>(페이징·카티전·MultipleBag)을 그대로 겪는다.</div>
+      </div>
+    </section>
+
+    <!-- 11. @BatchSize -->
+    <section class="slide" data-sec="③ @BatchSize">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ @BatchSize</h2><span class="idx">페이징 정석</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>application.yml / Entity</div>
+<pre><span class="c"># 전역 설정</span>
+hibernate.<span class="fn">default_batch_fetch_size</span>: <span class="nu">100</span>
+
+<span class="c">// 자식 조회를 IN 절로 묶음 (부모 100개↓ → 1쿼리, 초과 시 1+α)</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> order_items <span class="k">WHERE</span> order_id <span class="k">IN</span> (<span class="nu">1</span>,<span class="nu">2</span>,…,<span class="nu">100</span>);</pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">⭐</span>
+          <div class="body">페이징 + 컬렉션의 정석: <b>ToOne = Fetch Join, ToMany = @BatchSize</b></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. DTO Projection -->
+    <section class="slide" data-sec="④ DTO Projection">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>④ DTO Projection</h2><span class="idx">읽기 전용 최速</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderRepository.java</div>
+<pre><span class="an">@Query</span>(<span class="s">"SELECT new com.app.OrderDto("</span> +
+       <span class="s">"o.id, u.name, o.totalAmount) "</span> +
+       <span class="s">"FROM Order o JOIN o.user u"</span>)
+<span class="ty">List</span>&lt;<span class="ty">OrderDto</span>&gt; <span class="fn">findDtos</span>();</pre>
+        </div>
+        <div class="sub reveal"><span class="hl">필요한 컬럼만</span> + 영속성 컨텍스트 관리 없음 → 가장 가볍다. 원칙: <span class="hl">읽기는 DTO, 수정은 Entity.</span></div>
+      </div>
+    </section>
+
+    <!-- 13. QueryDSL -->
+    <section class="slide" data-sec="⑤ QueryDSL">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>⑤ QueryDSL</h2><span class="idx">타입 세이프 동적</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>OrderQueryRepository.java</div>
+<pre>queryFactory.<span class="fn">selectFrom</span>(order)
+    .<span class="fn">where</span>(
+        <span class="fn">statusEq</span>(status),     <span class="c">// null이면 조건 무시</span>
+        <span class="fn">amountGoe</span>(minAmount)  <span class="c">// null이면 조건 무시</span>
+    )
+    .<span class="fn">fetch</span>();</pre>
+        </div>
+        <div class="sub reveal">문자열 JPQL 조합의 지옥을 <span class="hl">컴파일 타임 체크</span>로 바꾼다. 동적 검색·필터에 최적.</div>
+      </div>
+    </section>
+
+    <!-- 14. 상황별 선택 -->
+    <section class="slide" data-sec="선택 가이드">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>상황별 선택 가이드</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">수정이 필요한가?</div><div class="a"><span class="k2">Entity</span> — Fetch Join / EntityGraph</div></div>
+          <div class="cell reveal"><div class="q">읽기 전용 + 동적 조건?</div><div class="a"><span class="k2">QueryDSL + DTO</span> Projection</div></div>
+          <div class="cell reveal"><div class="q">컬렉션 + 페이징?</div><div class="a"><span class="k2">ToOne Fetch Join + ToMany @BatchSize</span></div></div>
+          <div class="cell reveal"><div class="q">단순 읽기?</div><div class="a"><span class="k2">DTO Projection</span> — 가장 가벼움</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:54px; line-height:1.45;">
+          “읽기 전용은 <span class="em">DTO Projection</span>,<br />
+          엔티티가 필요하면 <span class="em">ToOne은 Fetch Join · ToMany는 @BatchSize</span>,<br />
+          동적 쿼리는 <span class="em">QueryDSL</span>.”
+        </div>
+        <div class="sub reveal">핵심 원칙 한 문장: <span class="hl">“읽기는 DTO, 수정은 Entity.”</span></div>
+      </div>
+    </section>
+
+    <!-- 16. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/N+1과-조회-최적화">N+1과 조회 최적화.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../database/쿼리-최적화-튜닝">쿼리 최적화·튜닝</a> · <a href="../../database/트랜잭션-관리">트랜잭션 관리</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

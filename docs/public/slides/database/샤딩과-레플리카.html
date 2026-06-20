@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>샤딩과 레플리카 — Pocket Senior 슬라이드</title>
+<meta name="description" content="DB 샤딩과 레플리카는 무엇이고, 어떻게 설계하는가 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">샤딩과-레플리카</span>.md</span></div>
+      <div class="ide-path">database — UTF-8 · LF</div>
+      <a class="tab-back" href="../../database/샤딩과-레플리카">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">17</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category database · 분산 스케일링</div>
+        <h1 class="reveal"><span class="hash"># </span>샤딩과<br /><span class="np">레플리카</span><span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"샤딩과 레플리카는 무엇이고, 어떻게 설계하나?"</span><span class="op">;</span><br />
+          <span class="op">// 읽기 분산 vs 쓰기 분산. 무엇을 먼저?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">레플리카는 <span class="em">읽기</span>를,<br />샤딩은 <span class="em-r">쓰기</span>를 분산한다.</div>
+        <div class="sub reveal">레플리카를 <span class="hl">먼저</span> 하고, 그래도 안 되면 샤딩을 고려한다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 레플리카 개념 -->
+    <section class="slide" data-sec="레플리카 · 개념">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>레플리카란?</h2><span class="idx">Replication</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>Primary가 쓰고, 복사본이 읽는다</div>
+<pre><span class="ty">Primary</span> (Master): 읽기 <span class="g">+</span> 쓰기
+<span class="ty">Replica</span> (Slave):  읽기 전용 (복사본)
+
+<span class="ty">Primary</span> ──복제──&gt; <span class="ty">Replica 1</span>
+                 ──&gt; <span class="ty">Replica 2</span></pre>
+        </div>
+        <div class="sub reveal">Primary의 데이터를 여러 Replica로 복제 → <span class="hl">읽기 트래픽을 여러 대로 분산</span>.</div>
+      </div>
+    </section>
+
+    <!-- 4. 복제 방식 -->
+    <section class="slide" data-sec="레플리카 · 복제 방식">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>복제 방식 3가지</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">동기 Sync</span><span class="d">커밋 전 Replica 확인 · Lag 없음·유실 없음 · <b>성능 저하 큼</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">비동기 Async</span><span class="d">커밋 후 전달 · Lag 있음·유실 가능 · <b>대부분 이걸 쓴다</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">반동기 Semi-Sync</span><span class="d">최소 1대 확인 후 커밋 · <b>Lag·유실 최소화</b></span></div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">실무 기본은 <span class="hl">비동기</span>. 동기는 정합성을 얻고 성능을 잃는다.</div>
+      </div>
+    </section>
+
+    <!-- 5. Read/Write 분리 -->
+    <section class="slide" data-sec="레플리카 · R/W 분리">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Read / Write 분리</h2><span class="idx">RoutingDataSource</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderService.java</div>
+<pre><span class="an">@Transactional</span>(readOnly = <span class="k">true</span>)   <span class="c">// → Replica</span>
+<span class="k">public</span> <span class="ty">List</span>&lt;<span class="ty">Order</span>&gt; <span class="fn">getOrders</span>() { ... }
+
+<span class="an">@Transactional</span>                    <span class="c">// → Primary</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">createOrder</span>() { ... }</pre>
+        </div>
+        <div class="sub reveal"><span class="hl">readOnly 플래그</span>로 라우팅. 읽기는 Replica, 쓰기는 Primary로 자동 분기.</div>
+      </div>
+    </section>
+
+    <!-- 6. 레플리카의 한계 -->
+    <section class="slide" data-sec="레플리카 · 한계">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>레플리카의 한계</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            레플리카는 읽기를 분산하지만 <b>쓰기는 분산하지 못한다</b>
+            <span class="dim">모든 쓰기가 Primary 1대에 몰림 → 쓰기 QPS 한계 · Primary CPU 100% → Replica를 아무리 늘려도 소용없다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 쓰기 분산이 필요하면? <span class="hl">샤딩으로 간다.</span></div>
+      </div>
+    </section>
+
+    <!-- 7. 샤딩 개념 -->
+    <section class="slide" data-sec="샤딩 · 개념">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>샤딩이란?</h2><span class="idx">Sharding</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>데이터를 여러 DB에 나눠서 저장</div>
+<pre><span class="c">// Before: 단일 DB</span>
+orders: <span class="nu">10</span>억 건 → <span class="ty">1대</span>가 감당
+
+<span class="c">// After: 샤딩</span>
+<span class="ty">Shard 1</span>: user_id 1~1000만
+<span class="ty">Shard 2</span>: user_id 1000만~2000만
+<span class="ty">Shard 3</span>: user_id 2000만~3000만</pre>
+        </div>
+        <div class="sub reveal">데이터를 쪼개 <span class="hl">여러 대가 쓰기를 나눠</span> 감당한다.</div>
+      </div>
+    </section>
+
+    <!-- 8. 샤딩 키 -->
+    <section class="slide" data-sec="샤딩 · 샤딩 키">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>샤딩 키 — 가장 중요한 결정</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">좋은 키 ✅</div><div class="a"><span class="k2">균등 분배 + 주요 쿼리 포함 + 불변</span><br />예: user_id → 사용자별 단일 샤드 접근</div></div>
+          <div class="cell reveal"><div class="q">나쁜 키 ❌</div><div class="a">created_at (최신 샤드 핫스팟)<br />status (편향) · 자주 바뀌는 값</div></div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">키 하나가 <span class="hl">전체 분산 효율과 운영 난이도</span>를 좌우한다.</div>
+      </div>
+    </section>
+
+    <!-- 9. 샤딩 전략 맵 -->
+    <section class="slide" data-sec="샤딩 · 전략">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>샤딩 전략 3가지</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Range</span><span class="d">user_id 범위별 · 범위 쿼리 용이 · <b>핫스팟 가능</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">Hash</span><span class="d">hash(key) % N · 균등 분배 · <b>범위 쿼리 불가</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">Directory</span><span class="d">매핑 테이블로 관리 · 유연한 배치 · <b>매핑 의존</b></span></div>
+        </div>
+        <div class="sub reveal" style="margin-top:40px;">Hash 예: <span class="hl">shard = hash(user_id) % 3</span> → 3개 샤드로 균등 분배.</div>
+      </div>
+    </section>
+
+    <!-- 10. 샤딩의 고통 맵 -->
+    <section class="slide" data-sec="샤딩 · 고통">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>샤딩의 고통 5가지</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Cross-Shard JOIN 불가</span><span class="d">다른 DB라 SQL JOIN 안 됨 · <b>앱에서 합쳐야</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">Cross-Shard 트랜잭션</span><span class="d">2샤드 걸친 <b>원자적 처리 어려움</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">Resharding</span><span class="d">샤드 추가 시 <b>대부분 데이터 재배치</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">글로벌 유니크 ID</span><span class="d">Auto Increment 충돌 · <b>Snowflake·UUID</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">운영 복잡도 폭증</span><span class="d">스키마·백업·모니터링 <b>샤드 수만큼</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. Resharding & Consistent Hashing -->
+    <section class="slide" data-sec="샤딩 · Consistent Hashing">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Resharding을 덜 아프게</h2><span class="idx">Consistent Hashing</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>샤드 3대 → 5대로 늘릴 때 이동량</div>
+<pre><span class="c">// 일반 Hash: % N 이 바뀌면 거의 다 이동</span>
+3대 → 5대: 대부분의 키 이동 <span class="k">(60%+)</span>
+
+<span class="c">// Consistent Hashing: 해시 링 위에 배치</span>
+3대 → 5대: 인접 키만 이동 <span class="g">(약 20%)</span></pre>
+        </div>
+        <div class="sub reveal">키를 링 위에서 <span class="hl">시계 방향 가장 가까운 노드</span>에 배치 → 노드 추가 시 인접 키만 이동.</div>
+      </div>
+    </section>
+
+    <!-- 12. 샤딩 전 고려 순서 -->
+    <section class="slide" data-sec="샤딩 전 고려">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>"정말 샤딩이 필요한가?"</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">쿼리 최적화</span><span class="d">인덱스·실행 계획 · <b>대부분 여기서 해결</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">캐싱 (Redis)</span><span class="d">읽기 부하 해결</span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">Read Replica</span><span class="d">읽기 분산</span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">파티셔닝·수직 분할</span><span class="d">단일 DB 내 분할 · 서비스별 DB 분리</span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">샤딩</span><span class="d"><b>최후의 수단</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 13. 냉정한 현실 -->
+    <section class="slide" data-sec="현실 점검">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>냉정한 현실</h2></div>
+        <div class="callout tip reveal">
+          <span class="ico">💡</span>
+          <div class="body">
+            한국에서 샤딩이 필요한 서비스는 <b>네이버·카카오·쿠팡·배민</b> 정도
+            <span class="dim">대부분의 서비스는 Aurora + Read Replica로 충분하다. 샤딩은 운영 비용이 막대해 진짜 필요할 때만 해야 한다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">샤딩은 멋이 아니라 <span class="hl">최후의 수단</span>이다.</div>
+      </div>
+    </section>
+
+    <!-- 14. 파티셔닝 대안 -->
+    <section class="slide" data-sec="파티셔닝 대안">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>테이블 파티셔닝 (샤딩 대안)</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>단일 DB 내에서 논리적 분할</div>
+<pre><span class="k">CREATE TABLE</span> orders ( ... )
+<span class="k">PARTITION BY RANGE</span> (<span class="fn">YEAR</span>(created_at)) (
+    <span class="k">PARTITION</span> p2024 <span class="k">VALUES LESS THAN</span> (<span class="nu">2025</span>),
+    <span class="k">PARTITION</span> p2025 <span class="k">VALUES LESS THAN</span> (<span class="nu">2026</span>)
+);
+<span class="c">-- 2024년 삭제: DROP PARTITION → 즉시</span></pre>
+        </div>
+        <div class="sub reveal">운영이 훨씬 단순하고 <span class="hl">오래된 데이터 아카이빙</span>에 강력. 단, 같은 DB라 <span class="hl">쓰기 분산은 안 된다.</span></div>
+      </div>
+    </section>
+
+    <!-- 15. 선택 가이드 -->
+    <section class="slide" data-sec="선택 가이드">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>무엇을 언제 고를까</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">읽기가 병목인가?</div><div class="a"><span class="k2">Read Replica</span> — 읽기 분산</div></div>
+          <div class="cell reveal"><div class="q">오래된 데이터 관리?</div><div class="a"><span class="k2">테이블 파티셔닝</span> — 단순·강력</div></div>
+          <div class="cell reveal"><div class="q">쓰기 QPS 한계 도달?</div><div class="a"><span class="k2">샤딩</span> — 최후의 수단</div></div>
+          <div class="cell reveal"><div class="q">대부분의 서비스?</div><div class="a"><span class="k2">Aurora + Read Replica</span> 면 충분</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:52px; line-height:1.45;">
+          “레플리카는 <span class="em">읽기</span>, 샤딩은 <span class="em-r">쓰기</span>를 분산한다.<br />
+          최적화 → 캐싱 → Replica 순서로 가고,<br />
+          그래도 안 되면 <span class="em">샤딩</span> — 키는 균등·주요쿼리·불변.”
+        </div>
+        <div class="sub reveal">가장 큰 고통은 <span class="hl">Cross-Shard JOIN 불가·Resharding·운영 복잡도</span>. 대부분은 Aurora + Replica + 파티셔닝으로 충분.</div>
+      </div>
+    </section>
+
+    <!-- 17. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/샤딩과-레플리카">샤딩과 레플리카.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../database/쿼리-최적화-튜닝">쿼리 최적화·튜닝</a> · <a href="../../traffic/부하-분산-아키텍처">부하 분산 아키텍처</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

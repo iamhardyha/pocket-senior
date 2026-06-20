@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>레디스 장애 대응 — Pocket Senior 슬라이드</title>
+<meta name="description" content="Redis 장애 시 역할별 대응 — Local Cache 폴백, Circuit Breaker, Cache Stampede, JWT, Sentinel/Cluster — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">레디스-장애-대응</span>.md</span></div>
+      <div class="ide-path">failure — UTF-8 · LF</div>
+      <a class="tab-back" href="../../failure/레디스-장애-대응">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">16</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category failure · 캐시 인프라 장애</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">Redis</span><br />장애 대응<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">if</span> (<span class="var">redis</span><span class="op">.</span><span class="var">down</span><span class="op">)</span> <span class="op">{</span> <span class="str">"서비스도 같이 죽는가?"</span> <span class="op">}</span><br />
+          <span class="op">// Redis가 장애 나면 어떻게 대응하는가?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">Redis가 죽었을 때 <span class="em-r">서비스가 같이 죽으면</span>,</div>
+        <div class="sub reveal" style="font-size:48px; color:var(--fg);">Redis에 <span class="hl">너무 의존</span>한 것이다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 장애 유형 -->
+    <section class="slide" data-sec="장애 유형">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Redis 장애, 4가지 얼굴</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">완전 다운</span><span class="d">연결 불가 · <b>프로세스 크래시 / OOM Kill</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">응답 지연</span><span class="d">타임아웃 급증 · <b>메모리 부족 / Slow Query / 네트워크</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">부분 장애</span><span class="d">일부 노드만 불통 · <b>Cluster 노드 장애 / 네트워크 파티션</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">데이터 유실</span><span class="d">키가 사라짐 · <b>eviction / 재시작</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 핵심 관점: 역할별 -->
+    <section class="slide" data-sec="핵심 관점">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>대응의 핵심</h2></div>
+        <div class="statement reveal" style="font-size:72px;">Redis의 <span class="em">역할</span>에 따라<br />대응이 <span class="em-r">완전히 다르다</span>.</div>
+        <div class="sub reveal">캐시냐 · 세션이냐 · 분산 락이냐 · 카운터냐 — <span class="hl">역할별로 따로 본다.</span></div>
+      </div>
+    </section>
+
+    <!-- 5. 역할 지도 -->
+    <section class="slide" data-sec="역할 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>역할별 장애 영향, 한눈에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">캐시</span><span class="d">DB로 직행 → <b>Cache Stampede</b> · DB 과부하</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">세션</span><span class="d"><b>전원 로그아웃</b> · CS 폭주</span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">분산 락</span><span class="d">동시성 제어 불가 → <b>쿠폰 중복 · 재고 마이너스</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">카운터/큐</span><span class="d">수량 관리 불가 → <b>초과 발급 or 중단</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. 역할① 캐시 — Stampede -->
+    <section class="slide" data-sec="① 캐시">
+      <div class="buf" style="align-items:flex-start;">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① 캐시 — Stampede</h2></div>
+        <div class="formula reveal">캐시 HIT <b>99%</b> 였는데, Redis 다운 →</div>
+        <div class="bignum reveal"><span class="x">10만</span><span style="font-size:96px; color:var(--fg-dim); font-weight:700;"> req → DB</span></div>
+        <div class="sub reveal">막아주던 캐시가 사라지자 트래픽이 <span class="hl">DB로 직행</span>. DB가 같이 죽는다.</div>
+      </div>
+    </section>
+
+    <!-- 7. 대응 1: Local Cache 폴백 -->
+    <section class="slide" data-sec="① 캐시 · 폴백">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>대응 — Local Cache 폴백</h2><span class="idx">Local → Redis → DB</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>ProductService.java</div>
+<pre><span class="ty">Product</span> cached = localCache.<span class="fn">getIfPresent</span>(key); <span class="c">// 1차: Local</span>
+<span class="k">if</span> (cached != <span class="k">null</span>) <span class="k">return</span> cached;
+<span class="k">try</span> {
+    cached = redis.<span class="fn">get</span>(key);            <span class="c">// 2차: Redis</span>
+} <span class="k">catch</span> (<span class="ty">RedisConnectionFailureException</span> e) {
+    log.<span class="fn">warn</span>(<span class="s">"Redis 실패, DB 직접 조회"</span>);  <span class="c">// 장애 시 스킵</span>
+}
+<span class="k">return</span> repo.<span class="fn">findById</span>(id).<span class="fn">orElseThrow</span>(); <span class="c">// 3차: DB</span></pre>
+        </div>
+        <div class="sub reveal">Redis가 죽어도 <span class="hl">서버 메모리 캐시</span>가 먼저 막고, 끝내 안 되면 DB로.</div>
+      </div>
+    </section>
+
+    <!-- 8. 대응 2: Circuit Breaker -->
+    <section class="slide" data-sec="① 캐시 · Circuit Breaker">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>대응 — Circuit Breaker</h2><span class="idx">실패율 50% ↑ → OPEN</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>ProductService.java</div>
+<pre><span class="an">@CircuitBreaker</span>(name = <span class="s">"redis"</span>, fallbackMethod = <span class="s">"getFromDB"</span>)
+<span class="ty">Product</span> <span class="fn">getFromCache</span>(<span class="ty">Long</span> id) {
+    <span class="k">return</span> redis.<span class="fn">get</span>(<span class="s">"product:"</span> + id);
+}
+<span class="ty">Product</span> <span class="fn">getFromDB</span>(<span class="ty">Long</span> id, <span class="ty">Throwable</span> t) {
+    <span class="k">return</span> repo.<span class="fn">findById</span>(id).<span class="fn">orElseThrow</span>();
+}</pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">⭐</span>
+          <div class="body">Circuit OPEN이면 <b>Redis 호출 자체를 안 함</b> — 죽은 Redis를 두드리느라 쌓이는 지연도 차단</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. 함정: Stampede 재발 -->
+    <section class="slide" data-sec="① 캐시 · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>함정 — 복구 직후 Stampede</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            Redis가 살아나도 <b>캐시가 텅 비어 있으면</b> 동시 요청이 다시 DB로 몰린다
+            <span class="dim">→ Mutex Lock으로 하나의 요청만 DB 조회 후 캐시 채우기 (setIfAbsent)</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 단순 <span class="hl">sleep 후 재조회</span>는 함정: 락 보유 스레드가 100ms 넘기면 miss가 샌다. 운영은 <span class="hl">제한 재시도 + 백오프</span>.</div>
+      </div>
+    </section>
+
+    <!-- 10. 역할② 세션 -->
+    <section class="slide" data-sec="② 세션">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 세션 — 전원 로그아웃</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>장애 연쇄</div>
+<pre>Redis 다운 → 세션 조회 실패 → 인증 실패
+           → <span class="g">전원 로그아웃</span> → CS 폭주</pre>
+        </div>
+        <div class="sub reveal">세션을 Redis에만 두면 <span class="hl">Redis 장애 = 인증 불가</span>. 의존을 줄이는 게 핵심.</div>
+      </div>
+    </section>
+
+    <!-- 11. 세션 선택 비교 -->
+    <section class="slide" data-sec="② 세션 · 선택">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>세션 방식별 장애 영향</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">Redis 세션</div><div class="a">완전 의존 → <span class="k2" style="color:var(--red)">전원 로그아웃</span></div></div>
+          <div class="cell reveal"><div class="q">JWT + Redis 블랙리스트</div><div class="a">부분 의존 → <span class="k2">폐기 토큰만 영향</span></div></div>
+          <div class="cell reveal"><div class="q">JWT only</div><div class="a"><span class="k2">영향 없음</span> (단, 토큰 폐기 불가)</div></div>
+          <div class="cell reveal"><div class="q">불가피하게 Redis면?</div><div class="a"><span class="k2">세션 전용 Cluster</span> 별도 분리</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. 역할③ 분산 락 -->
+    <section class="slide" data-sec="③ 분산 락">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ 분산 락 — DB 폴백</h2><span class="idx">DB Unique = 최종 안전망</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>CouponService.java</div>
+<pre><span class="k">try</span> {
+    <span class="fn">issueWithRedisLock</span>(couponId, userId);  <span class="c">// 1차: Redis 락</span>
+} <span class="k">catch</span> (<span class="ty">RedisConnectionFailureException</span> e) {
+    <span class="fn">issueWithDBLock</span>(couponId, userId);     <span class="c">// 2차: DB 비관 락</span>
+}
+<span class="c">// + DB Unique(coupon_id, user_id) = 항상 작동하는 최종 방어</span></pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">✅</span>
+          <div class="body">Redis 락이 다 실패해도 <b>DB Unique Key</b>가 중복 발급을 끝까지 막는다</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 13. 역할④ 카운터 -->
+    <section class="slide" data-sec="④ 카운터">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>④ 카운터 — DB로 전환</h2><span class="idx">선착순 수량 관리</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>CouponService.java</div>
+<pre><span class="k">try</span> {
+    <span class="k">return</span> <span class="fn">issueViaRedis</span>(couponId, userId);  <span class="c">// 빠름</span>
+} <span class="k">catch</span> (<span class="ty">RedisConnectionFailureException</span> e) {
+    log.<span class="fn">warn</span>(<span class="s">"Redis 장애, DB 직접 처리"</span>);
+    <span class="k">return</span> <span class="fn">issueViaDB</span>(couponId, userId);     <span class="c">// 느리지만 안전</span>
+}</pre>
+        </div>
+        <div class="sub reveal">평소엔 Redis로 빠르게, 장애 땐 <span class="hl">DB로 느려도 정확하게</span>. 공통 패턴은 폴백.</div>
+      </div>
+    </section>
+
+    <!-- 14. 고가용성 구성 -->
+    <section class="slide" data-sec="고가용성">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>인프라 — HA 구성 선택</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">단일 Redis</div><div class="a">개발/소규모 → <span class="k2" style="color:var(--red)">전체 서비스 영향</span></div></div>
+          <div class="cell reveal"><div class="q">Sentinel</div><div class="a">Master 죽으면 Replica 승격 → <span class="k2">Failover 중 수초 불가</span></div></div>
+          <div class="cell reveal"><div class="q">Cluster</div><div class="a">16384 슬롯 분산 → <span class="k2">장애 샤드만 영향</span></div></div>
+          <div class="cell reveal"><div class="q">Failover 시간?</div><div class="a">기본 30초↑ · 튜닝 시 <span class="k2">5~15초</span> (그 사이 쓰기 불가 → 재시도)</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.45;">
+          “<span class="em">역할별로 다르게</span> 접근합니다.<br />
+          캐시는 <span class="em">Local 폴백 · Circuit Breaker</span>,<br />
+          세션은 <span class="em">JWT로 의존 축소</span>, 락은 <span class="em">DB Unique 안전망</span>,<br />
+          인프라는 <span class="em">Sentinel/Cluster</span>로 Failover.”
+        </div>
+        <div class="sub reveal">핵심 원칙 한 문장: <span class="hl">“Redis가 죽어도 서비스는 살아있어야 한다.”</span></div>
+      </div>
+    </section>
+
+    <!-- 16. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../failure/레디스-장애-대응">레디스 장애 대응.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../failure/DB-장애-대응">DB 장애 대응</a> · <a href="../../concurrency/락과-동시성-제어">락과 동시성 제어</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

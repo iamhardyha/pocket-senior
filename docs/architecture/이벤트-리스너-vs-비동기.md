@@ -170,6 +170,8 @@ public void handle(OrderCreatedEvent event) {
 }
 ```
 
+> 주의: AFTER_COMMIT은 DB 커밋 후에 실행되지만, 커밋 직후 핸들러/프로세스가 죽으면 비동기 side-effect가 그대로 유실될 수 있다 (재시도·내구성 없음). 중요하거나 서비스 간 전파가 필요한 이벤트는 인프로세스 이벤트 대신 Outbox 패턴(내구성 보장)을 쓰자.
+
 ---
 
 ## "그냥 비동기로 하면 안 되나?"

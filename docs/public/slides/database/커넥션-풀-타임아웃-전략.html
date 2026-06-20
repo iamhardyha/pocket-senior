@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>커넥션 풀 · 타임아웃 전략 — Pocket Senior 슬라이드</title>
+<meta name="description" content="커넥션 풀 maxIdleTime/maxLifetime을 왜 무한대로 두면 안 되는가 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">커넥션-풀-타임아웃-전략</span>.md</span></div>
+      <div class="ide-path">database — UTF-8 · LF</div>
+      <a class="tab-back" href="../../database/커넥션-풀-타임아웃-전략">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">17</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category database · 커넥션 풀</div>
+        <h1 class="reveal"><span class="hash"># </span>커넥션 풀<br /><span class="np">타임아웃</span> 전략<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"maxIdleTime · maxLifetime, 왜 무한대로 두면 안 되나?"</span><span class="op">;</span><br />
+          <span class="op">// 커넥션은 한 번 만들면 계속 쓰면 되는 거 아닌가?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">커넥션은 <span class="em-r">살아 있는 자원</span>이다.</div>
+        <div class="sub reveal">오래 유지할수록 <span class="hl">네트워크 장비·DB·OS 레벨에서 몰래 썩는다.</span></div>
+      </div>
+    </section>
+
+    <!-- 3. 커넥션의 정체 -->
+    <section class="slide" data-sec="배경">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>커넥션은 객체가 아니다</h2></div>
+        <div class="statement reveal" style="font-size:62px; line-height:1.3;">
+          <span class="em">TCP 소켓</span> + <span class="em">DB 세션</span> + <span class="em">중간 장비 상태</span>
+        </div>
+        <div class="sub reveal">셋 중 하나라도 상태가 변하면 — 겉으론 살아있지만 실제론 죽은 <span class="hl">half-open</span> 상태가 된다.</div>
+      </div>
+    </section>
+
+    <!-- 4. 두 타임아웃 정의 -->
+    <section class="slide" data-sec="개념 정리">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>두 개의 타임아웃</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">⏱</span><span class="t">maxIdleTime</span><span class="d">유휴 커넥션을 풀에 유지하는 <b>최대 시간</b> (마지막 사용 후 경과)</span></div>
+          <div class="row reveal"><span class="n">⏳</span><span class="t">maxLifetime</span><span class="d">커넥션이 <b>생성 시점부터</b> 존재할 수 있는 최대 시간</span></div>
+        </div>
+        <div class="sub reveal">idle는 "안 쓴 지 얼마나", lifetime은 "태어난 지 얼마나". <span class="hl">기준이 다르다.</span></div>
+      </div>
+    </section>
+
+    <!-- 5. 위험 5선 지도 -->
+    <section class="slide" data-sec="위험 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>무한대가 위험한 5가지 이유</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">중간 장비 종료</span><span class="d">방화벽·NAT·LB가 유휴 세션을 <b>몰래 끊는다</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">DB 측 정리</span><span class="d">MySQL wait_timeout · PG idle_session_timeout</span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">세션 오염·누수</span><span class="d">세션 변수·Prepared Statement가 <b>계속 쌓인다</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">페일오버 미반영</span><span class="d">DNS 바뀌어도 <b>죽은 Primary에 계속 연결</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">OS 자원 고갈</span><span class="d">FD·소켓 메모리·DB 세션이 <b>반환 안 됨</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. ① 중간 장비 종료 시나리오 -->
+    <section class="slide" data-sec="① 중간 장비 종료">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>① 방화벽이 몰래 끊는다</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>App ──TCP──▶ [방화벽/NAT/LB] ──TCP──▶ DB</div>
+<pre><span class="nu">1.</span> 커넥션 30분 미사용
+<span class="nu">2.</span> 방화벽이 NAT 테이블에서 세션 제거 <span class="c">(FIN/RST 안 보냄)</span>
+<span class="nu">3.</span> App은 살아있다고 믿음 <span class="c">(keepalive 미설정 시)</span>
+<span class="nu">4.</span> 요청 → 패킷 DROP → <span class="k">재전송 → 수십 초 타임아웃</span></pre>
+        </div>
+        <div class="sub reveal">종료가 <span class="hl">한쪽에만 통보되거나 양쪽 다 통보 안 된다.</span> 이것이 가장 흔한 실무 장애.</div>
+      </div>
+    </section>
+
+    <!-- 7. ① 환경별 유휴 타임아웃 -->
+    <section class="slide" data-sec="① 중간 장비 종료">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>환경별 유휴 타임아웃</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">350s</span><span class="t">AWS NLB</span><span class="d">고정 · <b>사용자 변경 불가</b> · NAT Gateway도 동일</span></div>
+          <div class="row reveal"><span class="n">60s</span><span class="t">AWS ALB</span><span class="d">기본 60초 · <b>1~4000초 범위 설정 가능</b></span></div>
+          <div class="row reveal"><span class="n">30m+</span><span class="t">일반 방화벽</span><span class="d">30분~1시간 · <b>장비·정책에 따라 상이</b></span></div>
+          <div class="row reveal"><span class="n">5d</span><span class="t">Linux conntrack</span><span class="d">기본 5일 · <b>클라우드는 VPC가 먼저 적용</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. ② DB 측 정리 -->
+    <section class="slide" data-sec="② DB 측 정리">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② DB가 먼저 끊는다</h2><span class="idx">서버 측 정리</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>DB 서버의 유휴 커넥션 정리 설정</div>
+<pre><span class="c">-- MySQL: 기본 8시간 (28800초)</span>
+<span class="k">SHOW VARIABLES LIKE</span> <span class="s">'wait_timeout'</span>;  <span class="c">// JDBC는 이 값 적용</span>
+
+<span class="c">-- PostgreSQL (postgresql.conf)</span>
+idle_session_timeout = <span class="s">'30min'</span>  <span class="c">// PG 14+ 일반 유휴 정리</span></pre>
+        </div>
+        <div class="callout reveal" style="margin-top:38px;">
+          <span class="ico">💥</span>
+          <div class="body">야간 무트래픽 → 8시간 유휴 → DB가 종료 → 출근 첫 요청에 <b>"Communications link failure"</b></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. ③ 세션 오염 -->
+    <section class="slide" data-sec="③ 세션 오염">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>③ 세션이 오염된다</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>커넥션은 DB 서버에 상태(State)를 가진다</div>
+<pre><span class="c">// 어떤 요청이 세션 변수를 바꾸고 반납</span>
+connection.<span class="fn">execute</span>(<span class="s">"SET SESSION transaction_isolation"</span> +
+                   <span class="s">" = 'READ-UNCOMMITTED'"</span>);
+
+<span class="c">// 다음 요청이 같은 커넥션을 받으면?</span>
+<span class="k">→ READ-UNCOMMITTED가 그대로 적용된다!</span></pre>
+        </div>
+        <div class="sub reveal">세션 메모리·임시 테이블·Statement 캐시도 쌓인다. 주기적 재생성이 <span class="hl">세션을 클린하게 초기화</span>한다.</div>
+      </div>
+    </section>
+
+    <!-- 10. ④ 페일오버 미반영 -->
+    <section class="slide" data-sec="④ 페일오버 미반영">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>④ 페일오버가 안 먹힌다</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>Aurora / RDS Multi-AZ 페일오버</div>
+<pre><span class="nu">1.</span> Primary <span class="ty">10.0.1.100</span> 장애
+<span class="nu">2.</span> DNS가 Replica <span class="ty">10.0.1.200</span>으로 변경
+<span class="nu">3.</span> 기존 커넥션은 이미 <span class="ty">10.0.1.100</span>에 TCP 직결
+<span class="nu">4.</span> <span class="k">계속 죽은 Primary에 연결 시도 → DNS 무시</span></pre>
+        </div>
+        <div class="sub reveal">maxLifetime이 있으면 <span class="hl">오래된 커넥션이 폐기·재생성되며 새 DNS가 반영</span>된다.</div>
+      </div>
+    </section>
+
+    <!-- 11. HikariCP 권장 설정 -->
+    <section class="slide" data-sec="HikariCP 설정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>HikariCP 권장 설정</h2><span class="idx">Spring Boot 기본 풀</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>application.yml</div>
+<pre>spring.datasource.hikari:
+  max-lifetime: <span class="nu">1800000</span>    <span class="c"># 30분 — wait_timeout보다 짧게</span>
+  idle-timeout: <span class="nu">600000</span>     <span class="c"># 10분 — 방화벽 idle보다 짧게</span>
+  keepalive-time: <span class="nu">300000</span>   <span class="c"># 5분 — TCP 생존 확인 (4.0+)</span>
+  connection-timeout: <span class="nu">3000</span> <span class="c"># 3초 — 획득 대기</span></pre>
+        </div>
+        <div class="sub reveal">HikariCP는 maxLifetime을 <span class="hl">반드시 설정하라</span>고 강조한다. 0(무한대)은 명시적 비권장.</div>
+      </div>
+    </section>
+
+    <!-- 12. 핵심 원칙 부등식 -->
+    <section class="slide" data-sec="핵심 원칙">
+      <div class="buf" style="align-items:flex-start;">
+        <div class="formula reveal">기억할 두 개의 부등식</div>
+        <div class="statement reveal" style="font-size:64px; line-height:1.35;">
+          maxLifetime <span class="em-r">&lt;</span> DB <span class="em">wait_timeout</span><br />
+          idleTimeout <span class="em-r">&lt;</span> 방화벽 <span class="em">idle timeout</span>
+        </div>
+        <div class="sub reveal">내가 먼저 폐기해야 — DB·방화벽이 끊은 <span class="hl">죽은 커넥션을 받지 않는다.</span></div>
+      </div>
+    </section>
+
+    <!-- 13. maxLifetime Variance -->
+    <section class="slide" data-sec="maxLifetime 동작">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>왜 한꺼번에 안 만료될까</h2><span class="idx">Variance</span></div>
+        <div class="callout tip reveal">
+          <span class="ico">💡</span>
+          <div class="body">
+            HikariCP는 maxLifetime에서 <b>최대 ~2.5%를 랜덤 차감</b>한다
+            <span class="dim">예) 30분 → 최대 ~45초 편차. 모든 커넥션이 동시에 만료돼 재생성이 몰리는 것(thundering herd)을 방지한다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">커넥션 재생성이 <span class="hl">시간대별로 자연스럽게 분산</span>된다.</div>
+      </div>
+    </section>
+
+    <!-- 14. 유효성 검사 비교 -->
+    <section class="slide" data-sec="유효성 검사 비교">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>유효성 검사, 어떻게?</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">Borrow 시 검증 (testOnBorrow)</div><div class="a">죽은 커넥션 100% 차단 · <span style="color:var(--red)">매 요청 쿼리 → 느림</span></div></div>
+          <div class="cell reveal"><div class="q">유휴 중 주기 검사 (keepaliveTime)</div><div class="a"><span class="k2">성능 영향 적음</span> · 검사 사이 죽을 수 있음</div></div>
+          <div class="cell reveal"><div class="q">시간 기반 폐기 (maxLifetime)</div><div class="a"><span class="k2">오버헤드 0 · 가장 깔끔</span> · 유효한 것도 버림</div></div>
+          <div class="cell reveal"><div class="q">실무 최적 조합</div><div class="a"><span class="k2">maxLifetime + keepaliveTime</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15. 실무 사례: 월요일 아침 -->
+    <section class="slide" data-sec="실무 사례">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>사례 — 월요일 아침마다 장애</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            주말 트래픽 감소 → 수시간 유휴 → <b>NLB가 350초 후 세션 제거</b>
+            <span class="dim">App은 모름 → 월요일 첫 요청에 dead connection 할당 → 타임아웃 장애.</span>
+          </div>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">✅</span>
+          <div class="body">idleTimeout = <b>300초</b> (NLB 350초보다 짧게) + keepaliveTime = <b>120초</b></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.45;">
+          “커넥션은 <span class="em">TCP 소켓 + DB 세션 + 중간 장비 상태</span>라,<br />
+          오래 두면 <span class="em-r">half-open으로 썩습니다.</span><br />
+          maxLifetime은 <span class="em">DB wait_timeout보다</span>,<br />
+          idleTimeout은 <span class="em">방화벽 idle보다 짧게</span>.”
+        </div>
+        <div class="sub reveal">매번 새로 만드는 건? <span class="hl">handshake+TLS+인증으로 비싸다.</span> 풀의 목적은 재사용 + 적절한 갱신.</div>
+      </div>
+    </section>
+
+    <!-- 17. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/커넥션-풀-타임아웃-전략">커넥션 풀 타임아웃 전략.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../failure/DB-장애-대응">DB 장애 대응</a> · <a href="../../database/Aurora-업그레이드">Aurora 업그레이드</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

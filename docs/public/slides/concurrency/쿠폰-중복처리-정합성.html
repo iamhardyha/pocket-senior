@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>쿠폰 중복처리 정합성 — Pocket Senior 슬라이드</title>
+<meta name="description" content="쿠폰 발급/사용에서 중복을 막고 데이터 정합성을 지키는 법 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">쿠폰-중복처리-정합성</span>.md</span></div>
+      <div class="ide-path">concurrency — UTF-8 · LF</div>
+      <a class="tab-back" href="../../concurrency/쿠폰-중복처리-정합성">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">16</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category concurrency · 정합성</div>
+        <h1 class="reveal"><span class="hash"># </span>쿠폰 <span class="np">중복</span>처리<br />정합성<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"선착순 100장인데 101장이 나갔다. 왜?"</span><span class="op">;</span><br />
+          <span class="op">// 중복을 어떻게 막고, 정합성을 어떻게 지킬까?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">정합성 = <span class="em">확인과 실행을<br />원자적으로</span> 만드는 것.</div>
+        <div class="sub reveal">쿠폰에서 배운 패턴은 <span class="hl">재고·포인트·좋아요</span> 모든 차감/증가에 그대로 쓰인다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 문제: Race Condition -->
+    <section class="slide" data-sec="문제">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>왜 중복이 생기는가</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>쿠폰 잔여 1장 · 동시 요청</div>
+<pre>User A: ──<span class="fn">READ</span>(<span class="nu">1</span>)────────<span class="fn">WRITE</span>(<span class="nu">0</span>)──
+User B: ──────<span class="fn">READ</span>(<span class="nu">1</span>)────────<span class="fn">WRITE</span>(<span class="nu">0</span>)──  <span class="c">// 같은 값을 읽음</span>
+
+<span class="c">// 결과: 1장 남았는데 둘 다 발급 → 2장 나감</span></pre>
+        </div>
+        <div class="sub reveal"><span class="hl">Race Condition</span> — "확인"과 "실행"이 원자적이지 않아서다.</div>
+      </div>
+    </section>
+
+    <!-- 4. 해결 전략 지도 -->
+    <section class="slide" data-sec="전략 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>해결 전략, 한눈에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">DB Unique 제약</span><span class="d">중복 INSERT를 DB가 차단 · <b>1인 1쿠폰 정석</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">Pessimistic Lock</span><span class="d">먼저 잡은 사람만 · <b>정합성 최우선</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">Optimistic Lock</span><span class="d">충돌 감지 후 재시도 · <b>충돌 적을 때</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">Redis Atomic + Lua</span><span class="d">단일 스레드 원자 명령 · <b>고성능 선착순</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">MQ 직렬화</span><span class="d">요청을 줄 세워 순차 처리 · <b>대규모 선착순</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. DB Unique -->
+    <section class="slide" data-sec="① DB Unique">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① DB Unique 제약</h2><span class="idx">1인 1쿠폰</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>coupon_issue</div>
+<pre><span class="k">CREATE TABLE</span> coupon_issue (
+    coupon_id <span class="ty">BIGINT</span>, user_id <span class="ty">BIGINT</span>,
+    <span class="k">UNIQUE KEY</span> uk_coupon_user (coupon_id, user_id)  <span class="c">-- 핵심</span>
+);
+<span class="c">// 두 번째 발급 → DataIntegrityViolationException → 중복 거부</span></pre>
+        </div>
+        <div class="sub reveal">코드와 무관하게 <span class="hl">DB가 보장</span>한다. 단, "총 100장" 수량 제한은 <span class="hl">별도</span>로 막아야 한다.</div>
+      </div>
+    </section>
+
+    <!-- 6. Pessimistic Lock -->
+    <section class="slide" data-sec="② Pessimistic Lock">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② Pessimistic Lock</h2><span class="idx">일단 잠근다</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>CouponRepository.java</div>
+<pre><span class="an">@Lock</span>(<span class="ty">LockModeType</span>.PESSIMISTIC_WRITE)
+<span class="an">@Query</span>(<span class="s">"SELECT c FROM Coupon c WHERE c.id = :id"</span>)
+<span class="ty">Coupon</span> <span class="fn">findByIdForUpdate</span>(<span class="an">@Param</span>(<span class="s">"id"</span>) <span class="ty">Long</span> id);
+<span class="c">// SELECT ... FOR UPDATE → 커밋까지 다른 트랜잭션 대기</span></pre>
+        </div>
+        <div class="sub reveal">확실하다. 데이터가 절대 안 꼬인다. 단 <span class="hl">직렬화 → 처리량 급감</span>, Timeout·Deadlock 위험.</div>
+      </div>
+    </section>
+
+    <!-- 7. Optimistic Lock -->
+    <section class="slide" data-sec="③ Optimistic Lock">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ Optimistic Lock</h2><span class="idx">충돌하면 재시도</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>@Version 으로 충돌 감지</div>
+<pre><span class="an">@Version</span> <span class="k">private</span> <span class="ty">Long</span> version;   <span class="c">// 엔티티 버전 필드</span>
+
+<span class="c">-- 커밋 시 실행되는 SQL</span>
+<span class="k">UPDATE</span> coupon <span class="k">SET</span> remaining=<span class="nu">99</span>, version=<span class="nu">2</span>
+ <span class="k">WHERE</span> id=<span class="nu">1</span> <span class="k">AND</span> version=<span class="nu">1</span>;  <span class="c">// 0 rows → 예외 → 재시도</span></pre>
+        </div>
+        <div class="sub reveal">Lock 없이 빠르다. 단 <span class="hl">충돌이 많으면 재시도 폭발</span> → 오히려 느려진다.</div>
+      </div>
+    </section>
+
+    <!-- 8. Pessimistic vs Optimistic -->
+    <section class="slide" data-sec="② vs ③ 선택">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>비관 vs 낙관, 선택 기준</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">충돌이 잦은 선착순?</div><div class="a"><span class="k2">Pessimistic</span> — 강력 보장, 직렬화</div></div>
+          <div class="cell reveal"><div class="q">충돌 드문 일반 주문?</div><div class="a"><span class="k2">Optimistic</span> — 병렬, 높은 처리량</div></div>
+          <div class="cell reveal"><div class="q">초당 10건 이하?</div><div class="a"><span class="k2">Optimistic</span> 로 충분</div></div>
+          <div class="cell reveal"><div class="q">초당 100건 이상?</div><div class="a"><span class="k2">Pessimistic 또는 Redis</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. Redis DECR 함정 -->
+    <section class="slide" data-sec="④ Redis · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>④ Redis DECR의 함정</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>단순 DECR/INCR 롤백 패턴</div>
+<pre><span class="ty">Long</span> remaining = redis.<span class="fn">decrement</span>(key);   <span class="c">// 원자적</span>
+<span class="k">if</span> (remaining &lt; <span class="nu">0</span>) redis.<span class="fn">increment</span>(key);  <span class="c">// 롤백</span>
+<span class="c">// 발급 기록 ...</span></pre>
+        </div>
+        <div class="callout reveal" style="margin-top:38px;">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            DECR ≥0 직후 <b>기록/롤백 전에 죽으면</b> 카운터와 실제 발급이 불일치
+            <span class="dim">과도기적 음수도 다른 읽기에 노출된다. 단독 사용 금지.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. Redis + Lua -->
+    <section class="slide" data-sec="④ Redis + Lua">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>④ Redis + Lua Script</h2><span class="idx">완벽한 원자성</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>issue_coupon.lua</div>
+<pre><span class="k">if</span> redis.call(<span class="s">'SISMEMBER'</span>, KEYS[<span class="nu">2</span>], ARGV[<span class="nu">1</span>]) == <span class="nu">1</span> <span class="k">then</span>
+    <span class="k">return</span> -<span class="nu">1</span> <span class="c">-- 이미 발급 (중복)</span>
+<span class="k">end</span>
+<span class="k">local</span> r = tonumber(redis.call(<span class="s">'GET'</span>, KEYS[<span class="nu">1</span>]))
+<span class="k">if</span> <span class="k">not</span> r <span class="k">or</span> r &lt;= <span class="nu">0</span> <span class="k">then</span> <span class="k">return</span> <span class="nu">0</span> <span class="k">end</span>  <span class="c">-- 소진</span>
+redis.call(<span class="s">'DECR'</span>, KEYS[<span class="nu">1</span>]); redis.call(<span class="s">'SADD'</span>, KEYS[<span class="nu">2</span>], ARGV[<span class="nu">1</span>])
+<span class="k">return</span> <span class="nu">1</span> <span class="c">-- 성공</span></pre>
+        </div>
+        <div class="sub reveal">Script가 <span class="hl">하나의 명령처럼</span> 실행 → 확인·차감·기록이 한 방에. 끼어들 틈이 없다.</div>
+      </div>
+    </section>
+
+    <!-- 11. MQ 직렬화 -->
+    <section class="slide" data-sec="⑤ MQ 직렬화">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>⑤ MQ 직렬화</h2><span class="idx">대규모 선착순</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>API는 즉시 접수, Consumer가 순차 처리</div>
+<pre>kafkaTemplate.<span class="fn">send</span>(<span class="s">"coupon-issue"</span>, req);  <span class="c">// 202 Accepted</span>
+
+<span class="an">@KafkaListener</span>(topics=<span class="s">"coupon-issue"</span>, concurrency=<span class="s">"1"</span>)
+<span class="k">void</span> <span class="fn">process</span>(<span class="ty">Request</span> req) { <span class="c">/* 1건씩 발급 */</span> }</pre>
+        </div>
+        <div class="callout reveal" style="margin-top:38px;">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            <b>concurrency="1"은 인스턴스당</b> 스레드 수일 뿐
+            <span class="dim">전역 직렬화엔 단일 파티션 또는 키(couponId) 기반 파티셔닝이 필요하다.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. 3중 안전망 -->
+    <section class="slide" data-sec="3중 안전망">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>실전 조합 — 3중 안전망</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">1</span><span class="t">Redis Lua</span><span class="d">원자적 수량 차감 + 중복 방지 <b>(1차 방어)</b></span></div>
+          <div class="row reveal"><span class="n">2</span><span class="t">DB Unique Key</span><span class="d">Redis 장애에도 막아주는 <b>최종 안전망 (2차)</b></span></div>
+          <div class="row reveal"><span class="n">3</span><span class="t">Consumer 멱등성</span><span class="d">메시지 중복 처리 방지 <b>(3차 방어)</b></span></div>
+        </div>
+        <div class="sub reveal" style="margin-top:40px;">단일 전략이 아니라 <span class="hl">겹겹의 방어막</span>으로 설계한다.</div>
+      </div>
+    </section>
+
+    <!-- 13. 쿠폰 사용 · 상태 머신 -->
+    <section class="slide" data-sec="사용 · 상태 머신">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>사용 시 중복도 막는다</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>상태 머신으로 전이 제어</div>
+<pre><span class="ty">ISSUED</span> ──사용──&gt; <span class="g">USED</span>   <span class="c">// (O) 정상 사용</span>
+<span class="ty">USED</span>   ──사용──&gt; <span class="k">USED</span>   <span class="c">// (X) 중복 사용 불가</span>
+<span class="ty">EXPIRED</span>──사용──&gt; <span class="k">USED</span>   <span class="c">// (X) 만료 쿠폰 불가</span></pre>
+        </div>
+        <div class="sub reveal">발급뿐 아니라 사용도 <span class="hl">FOR UPDATE + 상태 검증</span>으로 한 번만 전이시킨다.</div>
+      </div>
+    </section>
+
+    <!-- 14. 정합성 검증 -->
+    <section class="slide" data-sec="정합성 검증">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>운영 — 정합성 검증 배치</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>매일 배치로 불일치 감지</div>
+<pre><span class="k">SELECT</span> coupon_id,
+  <span class="k">CASE WHEN</span> <span class="fn">COUNT</span>(ci.id) != (total - remaining)
+       <span class="k">THEN</span> <span class="s">'MISMATCH'</span> <span class="k">ELSE</span> <span class="s">'OK'</span> <span class="k">END</span>
+<span class="k">FROM</span> coupon c <span class="k">LEFT JOIN</span> coupon_issue ci ...</pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">✅</span>
+          <div class="body">발급 기록 수 = (총량 − 잔여)가 <b>맞는지</b> 매일 대조 → 불일치 시 알람·보정</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.45;">
+          “<span class="em">Redis Lua</span>로 확인·차감을 원자적으로,<br />
+          <span class="em">DB Unique</span>로 최종 안전망,<br />
+          <span class="em">Consumer 멱등성</span>으로 메시지 중복까지.”
+        </div>
+        <div class="sub reveal">핵심 한 문장: <span class="hl">“확인과 실행을 원자적으로 — 단일이 아닌 다중 안전망.”</span></div>
+      </div>
+    </section>
+
+    <!-- 16. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../concurrency/쿠폰-중복처리-정합성">쿠폰 중복처리 정합성.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../concurrency/락과-동시성-제어">락과 동시성 제어</a> · <a href="../../failure/선착순-쿠폰-유실-대응">선착순 쿠폰 유실 대응</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

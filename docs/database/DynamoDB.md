@@ -3,6 +3,7 @@ tags: [DynamoDB, AWS, NoSQL, 성능최적화, 샤딩]
 question: "DynamoDB"
 status: 🟢
 order: 6
+slides: true
 ---
 
 # DynamoDB

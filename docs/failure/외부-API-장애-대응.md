@@ -246,7 +246,16 @@ public PaymentResponse pay(PaymentRequest request) {
     try {
         return primaryPG.pay(request);
     } catch (Exception e) {
-        log.warn("메인 PG 장애, 보조 PG로 전환: {}", e.getMessage());
+        // ⚠️ 타임아웃은 절대 그냥 폴백하면 안 된다 — 메인 PG가 실제로
+        //    카드를 승인했을 수 있어 보조 PG로 재시도하면 이중 결제가 된다.
+        //    타임아웃/애매한 오류는 먼저 메인 PG의 거래 상태를 조회(verify)하고,
+        //    "확실히 미승인"일 때만 폴백한다. (connection-refused/5xx 등 명백한
+        //    실패만 즉시 폴백 대상으로 본다.)
+        if (!isDefinitelyFailed(e)) {
+            PaymentResponse verified = primaryPG.verify(request.idempotencyKey());
+            if (verified.isSucceeded()) return verified;  // 실제로는 결제됨
+        }
+        log.warn("메인 PG 장애(미승인 확인됨), 보조 PG로 전환: {}", e.getMessage());
     }
 
     // 2차: 보조 PG

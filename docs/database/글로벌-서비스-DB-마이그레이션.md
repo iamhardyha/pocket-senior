@@ -3,6 +3,7 @@ tags: [마이그레이션, MySQL, 레플리카, 무중단, 글로벌]
 question: "DB 마이그레이션 - 글로벌 서비스 운영 중"
 status: 🟢
 order: 4
+slides: true
 ---
 
 # 글로벌 서비스 운영 중 DB 마이그레이션
@@ -41,7 +42,7 @@ order: 4
 ```sql
 -- 1단계: 컬럼 추가 (NULL 허용)
 ALTER TABLE orders ADD COLUMN discount_amount DECIMAL(10,2) NULL;
--- MySQL 8.0+: INSTANT 방식으로 즉시 완료 (Lock 없음)
+-- MySQL 8.0.12+: 대부분의 ADD COLUMN을 INSTANT로 처리 (8.0.29 이전엔 마지막 컬럼만, 제약 있음); 불가 시 INPLACE 폴백
 
 -- 2단계: 코드 배포 (새 컬럼 사용)
 -- 구 코드: discount_amount 무시 → 정상 동작

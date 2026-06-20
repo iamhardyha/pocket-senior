@@ -112,7 +112,7 @@ Primary 장애 → MHA Manager 감지 → 최신 Replica 선택 → 승격 + VIP
 |------|---------------|-------------|-------------|
 | 수동 | 5~30분 | 가능 | 낮음 |
 | MHA | 10~30초 | 최소화 | 중간 |
-| Aurora | 30초 이내 | 없음 (공유 스토리지) | 낮음 |
+| Aurora | 30초 이내 | 커밋 데이터는 보존(공유 스토리지), 진행 중 트랜잭션은 롤백/유실 + 승격 동안 쓰기 불가 | 낮음 |
 
 → [Aurora-업그레이드](../database/Aurora-업그레이드.md)에서 Aurora 상세 다룸
 
@@ -203,6 +203,9 @@ public Order createOrder(OrderRequest request) {
 // 나머지 → Replica에서 읽기
 
 // 방법 3: Aurora는 Reader Endpoint에서도 lag이 매우 작음 (보통 100ms 이하)
+//   단, Reader Endpoint는 여전히 결과적 일관성(eventual consistency)이라
+//   작지만 0은 아닌 lag이 존재한다. 확실한 read-after-write가 필요하면
+//   Writer(Primary)에서 읽어야 한다.
 ```
 
 ### Replica 장애

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>쿼리 최적화·튜닝 — Pocket Senior 슬라이드</title>
+<meta name="description" content="쿼리를 어떻게 분석하고 최적화하는가 — EXPLAIN · 인덱스 · 커버링 · 커서 페이징 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">쿼리-최적화-튜닝</span>.md</span></div>
+      <div class="ide-path">database — UTF-8 · LF</div>
+      <a class="tab-back" href="../../database/쿼리-최적화-튜닝">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">17</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category database · 쿼리 최적화·튜닝</div>
+        <h1 class="reveal"><span class="hash"># </span>쿼리<br />최적화·튜닝<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"쿼리를 어떻게 분석하고 최적화하는가?"</span><span class="op">;</span><br />
+          <span class="op">// EXPLAIN으로 시작해서 인덱스로 끝난다.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal"><span class="em">EXPLAIN</span>을 읽으면 <span class="em-r">절반</span>이 풀린다.</div>
+        <div class="sub reveal">나머지 절반은 <span class="hl">인덱스를 이해하는 것</span>이다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 튜닝 프로세스 -->
+    <section class="slide" data-sec="튜닝 프로세스">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>튜닝은 정해진 순서다</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">느린 쿼리 발견</span><span class="d">Slow Query Log로 <b>문제 쿼리부터</b> 찾는다</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">EXPLAIN 분석</span><span class="d">실행 계획으로 <b>왜 느린지</b> 본다</span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">원인 파악</span><span class="d">풀스캔? 인덱스 미스? <b>정렬·임시 테이블?</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">인덱스·쿼리 수정</span><span class="d">근거 있는 <b>한 가지만</b> 바꾼다</span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">개선 효과 확인</span><span class="d">다시 EXPLAIN으로 <b>검증</b>한다</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. EXPLAIN 핵심 4컬럼 -->
+    <section class="slide" data-sec="EXPLAIN 읽기">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>EXPLAIN, 4개 컬럼만 봐라</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">type</span><span class="t">접근 방식</span><span class="d">좋음 <b>const·eq_ref·ref</b> / 나쁨 <b>ALL(풀스캔)</b></span></div>
+          <div class="row reveal"><span class="n">key</span><span class="t">사용된 인덱스</span><span class="d">인덱스 이름이 떠야 정상 / <b>NULL = 미사용</b></span></div>
+          <div class="row reveal"><span class="n">rows</span><span class="t">예상 검사 행</span><span class="d"><b>적을수록</b> 좋다 / 전체 행 수면 위험</span></div>
+          <div class="row reveal"><span class="n">Extra</span><span class="t">추가 정보</span><span class="d">좋음 <b>Using index</b> / 나쁨 <b>filesort·temporary</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. type 성능 순서 -->
+    <section class="slide" data-sec="EXPLAIN · type">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>type 성능 순서</h2><span class="idx">좋은 순</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>왼쪽일수록 빠르다</div>
+<pre><span class="g">const</span> &gt; <span class="g">eq_ref</span> &gt; <span class="g">ref</span> &gt; range &gt; index &gt; <span class="k">ALL</span>
+
+<span class="c">const  : PK/Unique로 1행 조회 (최고)</span>
+<span class="c">eq_ref : JOIN에서 PK/Unique 매칭</span>
+<span class="c">ref    : 일반 인덱스로 여러 행</span>
+<span class="c">range  : 인덱스 범위 스캔 (BETWEEN, &gt;, &lt;)</span>
+<span class="c">ALL    : 테이블 풀 스캔 (최악)</span></pre>
+        </div>
+        <div class="sub reveal"><span class="hl">ALL</span>이 보이면 일단 의심하라 — 풀스캔 신호다.</div>
+      </div>
+    </section>
+
+    <!-- 6. Extra 주의 -->
+    <section class="slide" data-sec="EXPLAIN · Extra">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>Extra — 보이면 멈칫</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            <b>Using filesort</b> · <b>Using temporary</b>
+            <span class="dim">인덱스로 정렬을 못 해 별도 정렬 / GROUP BY·DISTINCT로 임시 테이블 → 둘 다 느림.</span>
+          </div>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">✅</span>
+          <div class="body"><b>Using index</b> = 커버링 인덱스 <span class="dim">테이블을 안 보고 인덱스만으로 끝낸다 — 가장 빠른 신호.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. 인덱스 타는/못 타는 경우 -->
+    <section class="slide" data-sec="인덱스 · 적용 조건">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>인덱스를 못 타는 순간</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>WHERE 절</div>
+<pre><span class="c">-- 인덱스 사용 O</span>
+<span class="k">WHERE</span> user_id = <span class="nu">100</span>                  <span class="c">-- 등호</span>
+<span class="k">WHERE</span> created_at &gt; <span class="s">'2026-01-01'</span>     <span class="c">-- 범위</span>
+
+<span class="c">-- 인덱스 사용 X</span>
+<span class="k">WHERE</span> <span class="fn">YEAR</span>(created_at) = <span class="nu">2026</span>       <span class="c">-- 컬럼에 함수</span>
+<span class="k">WHERE</span> name <span class="k">LIKE</span> <span class="s">'%검색어'</span>          <span class="c">-- 앞쪽 와일드카드</span>
+<span class="k">WHERE</span> amount * <span class="nu">1.1</span> &gt; <span class="nu">10000</span>        <span class="c">-- 컬럼에 연산</span></pre>
+        </div>
+        <div class="sub reveal">규칙: <span class="hl">인덱스 컬럼은 가공하지 마라.</span> 함수·연산·앞 와일드카드는 인덱스를 죽인다.</div>
+      </div>
+    </section>
+
+    <!-- 8. 복합 인덱스 선두 컬럼 -->
+    <section class="slide" data-sec="복합 인덱스">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>복합 인덱스는 선두부터</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>INDEX (user_id, status, created_at)</div>
+<pre><span class="c">-- 사용 O : 선두부터 연속으로 쓰면 탄다</span>
+<span class="k">WHERE</span> user_id = ?
+<span class="k">WHERE</span> user_id = ? <span class="k">AND</span> status = ?
+
+<span class="c">-- 사용 X : 선두 컬럼(user_id) 누락</span>
+<span class="k">WHERE</span> status = ?
+<span class="k">WHERE</span> created_at &gt; ?</pre>
+        </div>
+        <div class="sub reveal">선두 컬럼이 빠지면 <span class="hl">뒤 컬럼은 의미가 없다</span>. 왼쪽부터 연속으로 써야 탄다.</div>
+      </div>
+    </section>
+
+    <!-- 9. 복합 인덱스 순서 원칙 -->
+    <section class="slide" data-sec="복합 인덱스 · 순서">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>인덱스 컬럼 순서 원칙</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">동등 조건 (=)</span><span class="d">맨 앞에 — 가장 좁히는 조건</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">범위 조건 (&gt; &lt; BETWEEN)</span><span class="d">그 뒤에 — 범위부턴 정렬이 깨진다</span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">정렬 (ORDER BY)</span><span class="d">맨 마지막에 — filesort 회피</span></div>
+        </div>
+        <div class="sub reveal" style="margin-top:40px;">예) <span class="hl">WHERE user_id=? AND status=? ORDER BY created_at</span> → <span class="hl">(user_id, status, created_at)</span></div>
+      </div>
+    </section>
+
+    <!-- 10. 커버링 인덱스 -->
+    <section class="slide" data-sec="커버링 인덱스">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>커버링 인덱스</h2><span class="idx">테이블 접근 0</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>인덱스에 SELECT 컬럼까지 모두 포함</div>
+<pre><span class="k">CREATE INDEX</span> idx_cov <span class="k">ON</span> orders
+  (user_id, status, created_at, total_amount);
+
+<span class="k">SELECT</span> status, created_at, total_amount  <span class="c">-- 인덱스에 다 있음</span>
+<span class="k">FROM</span> orders <span class="k">WHERE</span> user_id = <span class="nu">100</span>;
+<span class="c">-- Extra: Using index  → 테이블을 안 본다</span></pre>
+        </div>
+        <div class="sub reveal">필요한 컬럼이 <span class="hl">전부 인덱스 안</span>에 있으면 디스크 테이블 조회가 사라진다.</div>
+      </div>
+    </section>
+
+    <!-- 11. 흔한 문제 맵 -->
+    <section class="slide" data-sec="성능 문제 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>흔한 성능 함정 5선</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">큰 OFFSET 페이징</span><span class="d">앞 행을 다 읽고 버림 → <b>커서 기반</b>으로</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">COUNT(*) 전체</span><span class="d">풀스캔 위험 → <b>근사치·"더보기"</b> 패턴</span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">서브쿼리 IN</span><span class="d">→ <b>JOIN / EXISTS</b>로 재작성</span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">SELECT *</span><span class="d">전송량↑·커버링 불가 → <b>필요 컬럼만</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">OR 조건</span><span class="d">인덱스 비효율 → <b>UNION ALL</b> 분리</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. 커서 기반 페이징 -->
+    <section class="slide" data-sec="① 커서 페이징">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>① OFFSET → 커서 페이징</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>100만 번째 페이지</div>
+<pre><span class="c">-- 느림: 100만 행을 읽고 버린 뒤 10개 반환</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> orders <span class="k">ORDER BY</span> id <span class="k">DESC</span>
+  <span class="k">LIMIT</span> <span class="nu">10</span> <span class="k">OFFSET</span> <span class="nu">1000000</span>;
+
+<span class="c">-- 빠름: 인덱스로 곧장 점프 (No-Offset)</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> orders <span class="k">WHERE</span> id &lt; <span class="nu">12345</span>
+  <span class="k">ORDER BY</span> id <span class="k">DESC</span> <span class="k">LIMIT</span> <span class="nu">10</span>;</pre>
+        </div>
+        <div class="sub reveal">마지막 본 <span class="hl">id를 커서로</span> 들고 다니면, OFFSET이 아무리 커도 비용이 일정하다.</div>
+      </div>
+    </section>
+
+    <!-- 13. 서브쿼리 IN → JOIN/EXISTS -->
+    <section class="slide" data-sec="③ JOIN · EXISTS">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>③ 서브쿼리 IN → JOIN·EXISTS</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>VIP 회원의 주문</div>
+<pre><span class="c">-- 느림: 서브쿼리 IN</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> orders
+<span class="k">WHERE</span> user_id <span class="k">IN</span> (<span class="k">SELECT</span> id <span class="k">FROM</span> users <span class="k">WHERE</span> grade=<span class="s">'VIP'</span>);
+
+<span class="c">-- 빠름: JOIN / 큰 테이블이면 EXISTS</span>
+<span class="k">SELECT</span> o.* <span class="k">FROM</span> orders o
+<span class="k">JOIN</span> users u <span class="k">ON</span> o.user_id = u.id
+<span class="k">WHERE</span> u.grade = <span class="s">'VIP'</span>;</pre>
+        </div>
+        <div class="sub reveal">옵티마이저가 못 풀어주는 서브쿼리를 <span class="hl">명시적 JOIN/EXISTS</span>로 풀어준다.</div>
+      </div>
+    </section>
+
+    <!-- 14. Before/After 튜닝 예시 -->
+    <section class="slide" data-sec="튜닝 예시">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>실행 계획으로 잡는다</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">Before — 인덱스 없음</div><div class="a">orders <span class="k2">type=ALL · rows=1,000,000</span><br />→ 풀스캔</div></div>
+          <div class="cell reveal"><div class="q">After — created_at 인덱스</div><div class="a">orders <span class="k2">type=range · rows=50,000</span><br />→ 범위 스캔</div></div>
+        </div>
+        <div class="sub reveal" style="margin-top:40px;">측정 → 인덱스 추가 → <span class="hl">다시 EXPLAIN</span>. type이 ALL에서 range로 떨어지는지 눈으로 확인한다.</div>
+      </div>
+    </section>
+
+    <!-- 15. 모니터링 -->
+    <section class="slide" data-sec="모니터링">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>느린 쿼리를 잡는 그물</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>Slow Query Log</div>
+<pre><span class="k">SET GLOBAL</span> slow_query_log = <span class="k">ON</span>;
+<span class="k">SET GLOBAL</span> long_query_time = <span class="nu">1</span>;  <span class="c">-- 1초↑ 기록</span>
+
+<span class="c">-- 지금 실행 중인 느린 쿼리</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> information_schema.processlist
+<span class="k">WHERE</span> command != <span class="s">'Sleep'</span> <span class="k">AND</span> time &gt; <span class="nu">3</span>;</pre>
+        </div>
+        <div class="sub reveal">도구: <span class="hl">pt-query-digest</span> · MySQL Workbench · CloudWatch Insights(Aurora)</div>
+      </div>
+    </section>
+
+    <!-- 16. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:54px; line-height:1.45;">
+          “쿼리 튜닝은 <span class="em">EXPLAIN으로 시작해 인덱스로 끝</span>납니다.<br />
+          type이 <span class="em-r">ALL</span>인지, <span class="em-r">filesort</span>가 있는지 보고,<br />
+          복합 인덱스는 <span class="em">동등 → 범위 → 정렬</span> 순으로 설계합니다.”
+        </div>
+        <div class="sub reveal">대량 페이징은 <span class="hl">커서 기반</span>, 조회는 <span class="hl">필요한 컬럼만</span> — 가능하면 커버링 인덱스.</div>
+      </div>
+    </section>
+
+    <!-- 17. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/쿼리-최적화-튜닝">쿼리 최적화·튜닝.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../database/N+1과-조회-최적화">N+1과 조회 최적화</a> · <a href="../../database/트랜잭션-관리">트랜잭션 관리</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>트랜잭션 관리 — Pocket Senior 슬라이드</title>
+<meta name="description" content="트랜잭션을 어떻게 관리하고, 여러 DB에 걸친 트랜잭션은 어떻게 처리하는가 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">트랜잭션-관리</span>.md</span></div>
+      <div class="ide-path">database — UTF-8 · LF</div>
+      <a class="tab-back" href="../../database/트랜잭션-관리">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">19</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category database · 트랜잭션 & 분산</div>
+        <h1 class="reveal"><span class="hash"># </span>트랜잭션<br /><span class="np">관리</span><span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"여러 DB에 걸친 트랜잭션, 어떻게 처리하나?"</span><span class="op">;</span><br />
+          <span class="op">// 단일 DB는 @Transactional. 그 너머는?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">단일 DB는 <span class="em">@Transactional</span>로 충분하다.</div>
+        <div class="sub reveal">여러 DB에 걸치면 분산 트랜잭션이 필요한데, <span class="hl">대부분은 피하는 게 답</span>이다.</div>
+      </div>
+    </section>
+
+    <!-- 3. ACID 복습 -->
+    <section class="slide" data-sec="ACID">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>ACID, 깨지면 무슨 일?</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">A</span><span class="t">Atomicity 원자성</span><span class="d">전부 성공 or 전부 실패 · <b>깨지면 송금 중 한쪽만 차감</b></span></div>
+          <div class="row reveal"><span class="n">C</span><span class="t">Consistency 일관성</span><span class="d">제약 조건 항상 만족 · <b>깨지면 잔고가 음수</b></span></div>
+          <div class="row reveal"><span class="n">I</span><span class="t">Isolation 격리성</span><span class="d">동시 트랜잭션 간섭 없음 · <b>깨지면 Dirty Read · Lost Update</b></span></div>
+          <div class="row reveal"><span class="n">D</span><span class="t">Durability 지속성</span><span class="d">커밋 후 영구 보존 · <b>깨지면 커밋했는데 사라짐</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 핵심 개념 지도 -->
+    <section class="slide" data-sec="개념 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>오늘 다룰 5가지</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">@Transactional</span><span class="d">프록시가 begin·commit·rollback을 <b>대신 감싼다</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">전파 Propagation</span><span class="d">기존 TX에 참여? 새로? · <b>REQUIRED / REQUIRES_NEW</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">격리 수준 Isolation</span><span class="d">동시성 이상 vs 성능의 <b>트레이드오프</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">흔한 함정</span><span class="d">같은 클래스 내부 호출은 <b>프록시를 안 거친다</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">분산 트랜잭션</span><span class="d">2PC는 피하고 · <b>Saga · Outbox</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. @Transactional 동작 원리 -->
+    <section class="slide" data-sec="① @Transactional">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① @Transactional 동작 원리</h2><span class="idx">프록시 AOP</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>프록시가 메서드를 감싼다</div>
+<pre><span class="nu">1.</span> 프록시가 요청을 가로챔
+<span class="nu">2.</span> TransactionManager.<span class="fn">begin</span>()
+<span class="nu">3.</span> 실제 메서드 실행
+<span class="nu">4a.</span> 정상 → <span class="g">commit()</span>
+<span class="nu">4b.</span> 예외 → <span class="k">rollback()</span></pre>
+        </div>
+        <div class="sub reveal">개발자는 <span class="hl">비즈니스 로직만</span> 쓰고, 트랜잭션 경계는 프록시가 책임진다.</div>
+      </div>
+    </section>
+
+    <!-- 6. 전파 맵 -->
+    <section class="slide" data-sec="② 전파">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 전파 — 5가지 한눈에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">REQUIRED <span style="font-size:24px;color:var(--green);">(기본)</span></span><span class="d">있으면 참여, 없으면 생성 · <b>대부분의 경우</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">REQUIRES_NEW</span><span class="d">항상 새 TX (기존 보류) · <b>독립적 로그·감사</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">NESTED</span><span class="d">기존 TX 내 Savepoint · <b>부분 롤백</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">NOT_SUPPORTED</span><span class="d">TX 없이 실행 (기존 보류) · <b>조회 전용</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">MANDATORY</span><span class="d">기존 TX 없으면 예외 · <b>TX 필수 보장</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. REQUIRES_NEW 실전 -->
+    <section class="slide" data-sec="② 전파 · REQUIRES_NEW">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>REQUIRES_NEW 실전</h2><span class="idx">롤백과 무관한 로그</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>AuditService.java</div>
+<pre><span class="an">@Transactional</span>(propagation = Propagation.<span class="ty">REQUIRES_NEW</span>)
+<span class="k">public</span> <span class="k">void</span> <span class="fn">log</span>(<span class="ty">Order</span> order) {
+    <span class="c">// 별도 TX → 외부 TX가 롤백돼도 이 로그는 유지</span>
+    auditLogRepository.<span class="fn">save</span>(<span class="k">new</span> <span class="ty">AuditLog</span>(order));
+}</pre>
+        </div>
+        <div class="sub reveal">주문은 롤백돼도 <span class="hl">감사 로그는 남아야 할 때</span>. 새 트랜잭션으로 떼어낸다.</div>
+      </div>
+    </section>
+
+    <!-- 8. 격리 수준 맵 -->
+    <section class="slide" data-sec="③ 격리 수준">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ 격리 수준 — 막는 이상</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">L0</span><span class="t">READ_UNCOMMITTED</span><span class="d">Dirty·NonRepeatable·Phantom <b>전부 허용</b> · 성능 최고</span></div>
+          <div class="row reveal"><span class="n">L1</span><span class="t">READ_COMMITTED</span><span class="d">Dirty만 차단 · <b>PostgreSQL 기본</b></span></div>
+          <div class="row reveal"><span class="n">L2</span><span class="t">REPEATABLE_READ</span><span class="d">Dirty·NonRepeatable 차단 · <b>MySQL 기본</b></span></div>
+          <div class="row reveal"><span class="n">L3</span><span class="t">SERIALIZABLE</span><span class="d">전부 차단 · <b>성능 최저</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. MySQL Phantom 참고 -->
+    <section class="slide" data-sec="③ 격리 수준 · MySQL">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>MySQL의 Phantom Read</h2></div>
+        <div class="callout tip reveal">
+          <span class="ico">💡</span>
+          <div class="body">
+            SQL 표준상 REPEATABLE_READ는 Phantom을 <b>허용</b>하지만,
+            MySQL InnoDB는 <b>Next-Key Lock(Gap + Record)</b>으로 사실상 방지한다.
+            <span class="dim">그래서 MySQL에서는 △ — 표준이 아니라 구현이 막아준다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">실무: 대부분 <span class="hl">DB 기본값 그대로</span>. 격리 수준을 바꿀 일은 극히 드물다.</div>
+      </div>
+    </section>
+
+    <!-- 10. 함정: 내부 호출 -->
+    <section class="slide" data-sec="④ 함정 · 내부 호출">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>④ 함정 — 같은 클래스 내부 호출</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>OrderService.java</div>
+<pre><span class="k">public</span> <span class="k">void</span> <span class="fn">outer</span>() {
+    <span class="fn">inner</span>();   <span class="c">// @Transactional이 안 먹힘!</span>
+}
+
+<span class="an">@Transactional</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">inner</span>() {
+    <span class="c">// 프록시를 안 거쳐서 TX 없이 실행됨</span>
+}</pre>
+        </div>
+        <div class="sub reveal">원인: Spring AOP는 <span class="hl">프록시 기반</span>. 같은 객체 내 호출은 프록시를 거치지 않는다.</div>
+      </div>
+    </section>
+
+    <!-- 11. 함정 해결 -->
+    <section class="slide" data-sec="④ 함정 · 해결">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>해결 — 프록시를 거치게</h2></div>
+        <div class="callout tip reveal">
+          <span class="ico">✅</span>
+          <div class="body">
+            <b>별도 클래스로 분리</b>한다 (권장)
+            <span class="dim">@Transactional 메서드를 다른 빈으로 옮기면 호출 시 프록시를 거친다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">self-injection도 가능하지만 <span class="hl">순환참조·가독성 문제</span>로 비추. 분리가 깔끔하다.</div>
+      </div>
+    </section>
+
+    <!-- 12. readOnly 최적화 -->
+    <section class="slide" data-sec="readOnly">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>readOnly = true 한 줄의 값</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">1</span><span class="t">Dirty Checking 생략</span><span class="d">Hibernate가 변경 감지를 안 함 → <b>성능 향상</b></span></div>
+          <div class="row reveal"><span class="n">2</span><span class="t">Replica 라우팅</span><span class="d">읽기를 <b>Read 전용 노드</b>로 보낼 수 있음</span></div>
+          <div class="row reveal"><span class="n">3</span><span class="t">의도 명확화</span><span class="d">"이 메서드는 <b>수정하지 않는다</b>"는 선언</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 13. 분산 문제 상황 -->
+    <section class="slide" data-sec="⑤ 분산 · 문제">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>⑤ 여러 DB, @Transactional로 묶을까?</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>서로 다른 데이터 소스</div>
+<pre>서비스 A (<span class="ty">DB-A</span>): 주문 저장
+서비스 B (<span class="ty">DB-B</span>): 재고 차감
+
+<span class="an">@Transactional</span>으로 묶을 수 있나?  <span class="k">→ 불가능.</span>
+<span class="c">// 두 DB는 서로 다른 TransactionManager를 쓴다</span></pre>
+        </div>
+        <div class="sub reveal">하나의 로컬 트랜잭션으로는 <span class="hl">두 DB의 원자성을 보장할 수 없다.</span></div>
+      </div>
+    </section>
+
+    <!-- 14. 2PC 함정 -->
+    <section class="slide" data-sec="⑤ 분산 · 2PC">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>2PC — 이론적 정답, 실무적 비추</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            Prepare → Commit 2단계로 강한 일관성을 주지만,
+            <b>Lock 보유 2배 · Coordinator 단일 장애점 · 파티션 시 해결 불가</b>
+            <span class="dim">대부분의 클라우드 DB가 XA 트랜잭션을 미지원하거나 비권장한다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 그래서 실무는 <span class="hl">강한 일관성을 포기하고 Saga로 간다.</span></div>
+      </div>
+    </section>
+
+    <!-- 15. Saga 패턴 -->
+    <section class="slide" data-sec="⑤ 분산 · Saga">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Saga — 실무의 답</h2><span class="idx">로컬 TX + 보상</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>각 서비스가 로컬 트랜잭션으로 처리</div>
+<pre><span class="c">// 성공</span>
+주문 생성<span class="g">(DB-A)</span> → 재고 차감<span class="g">(DB-B)</span> → 결제<span class="g">(PG)</span> → 완료
+
+<span class="c">// 재고에서 실패 → 보상 트랜잭션</span>
+주문 생성<span class="g">(DB-A)</span> → 재고 차감 <span class="k">실패</span> → 주문 취소<span class="k">(보상)</span></pre>
+        </div>
+        <div class="sub reveal">실패하면 되돌리는 <span class="hl">보상 트랜잭션</span>으로 정합성을 맞춘다. 이벤트 기반(Choreography) · 중앙 제어(Orchestration).</div>
+      </div>
+    </section>
+
+    <!-- 16. Outbox 패턴 -->
+    <section class="slide" data-sec="⑤ 분산 · Outbox">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Outbox — 메시지 유실 방지</h2><span class="idx">권장</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderService.java</div>
+<pre><span class="an">@Transactional</span>  <span class="c">// 같은 DB, 같은 트랜잭션</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">createOrder</span>(<span class="ty">OrderRequest</span> req) {
+    orderRepository.<span class="fn">save</span>(...);        <span class="c">// 1. 주문 저장</span>
+    outboxRepository.<span class="fn">save</span>(...);       <span class="c">// 2. 이벤트도 같은 TX</span>
+}  <span class="c">// 커밋 → 주문 + 이벤트가 원자적으로 저장</span></pre>
+        </div>
+        <div class="sub reveal">별도 프로세스(CDC·Polling)가 outbox를 읽어 <span class="hl">Kafka에 발행</span>. 저장과 발행의 원자성을 한 TX로 보장한다.</div>
+      </div>
+    </section>
+
+    <!-- 17. 분산 방법 비교 -->
+    <section class="slide" data-sec="⑤ 분산 · 비교">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>분산 방법, 어떻게 고를까</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">강한 일관성이 절대 필요?</div><div class="a"><span class="k2">2PC (XA)</span> — 단, 성능·운영 비용 큼 · 비추</div></div>
+          <div class="cell reveal"><div class="q">소규모 · 단순 흐름?</div><div class="a"><span class="k2">Saga Choreography</span> — 이벤트 기반</div></div>
+          <div class="cell reveal"><div class="q">대규모 · 복잡한 흐름?</div><div class="a"><span class="k2">Saga Orchestration</span> — 중앙 제어</div></div>
+          <div class="cell reveal"><div class="q">이벤트 유실을 막아야?</div><div class="a"><span class="k2">Outbox + CDC</span> — 권장 기본값</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 18. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:52px; line-height:1.45;">
+          “단일 DB는 <span class="em">@Transactional</span>,<br />
+          여러 DB는 <span class="em-r">2PC 대신 Saga</span> + <span class="em">Outbox</span>,<br />
+          핵심은 <span class="em">강한 일관성을 포기하고 결과적 일관성</span>을 받아들이는 것.”
+        </div>
+        <div class="sub reveal">전파는 기본 REQUIRED, 독립적 로그는 REQUIRES_NEW. <span class="hl">대부분의 비즈니스엔 이걸로 충분.</span></div>
+      </div>
+    </section>
+
+    <!-- 19. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/트랜잭션-관리">트랜잭션 관리.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../architecture/MSA-분산-트랜잭션">MSA 분산 트랜잭션</a> · <a href="../../concurrency/락과-동시성-제어">락과 동시성 제어</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

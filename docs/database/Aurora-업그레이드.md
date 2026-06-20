@@ -3,6 +3,7 @@ tags: [Aurora, AWS, MySQL, 마이그레이션, 성능최적화]
 question: "AWS Aurora 업그레이드 고민과 장점"
 status: 🟢
 order: 5
+slides: true
 ---
 
 # AWS Aurora 업그레이드

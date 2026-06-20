@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DynamoDB — Pocket Senior 슬라이드</title>
+<meta name="description" content="DynamoDB는 무엇이고, 언제 쓰고, 어떻게 설계하는가 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">DynamoDB</span>.md</span></div>
+      <div class="ide-path">database — UTF-8 · LF</div>
+      <a class="tab-back" href="../../database/DynamoDB">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">16</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category database · 관리형 NoSQL</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">Dynamo</span>DB<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"무엇이고 · 언제 쓰고 · 어떻게 설계하나"</span><span class="op">;</span><br />
+          <span class="op">// 키 기반 조회가 메인이면 답은 정해져 있다</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">AWS의 <span class="em">완전 관리형</span> NoSQL.</div>
+        <div class="sub reveal"><span class="hl">single-digit ms</span> 응답 + 키 기반 조회가 메인이면 — 최적이다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 배경: 왜 RDB가 아닌가 -->
+    <section class="slide" data-sec="배경">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>왜 RDB가 아닌가</h2></div>
+        <div class="statement reveal" style="font-size:64px; line-height:1.3;">트래픽이 커질수록<br /><span class="em-r">Scale-Up</span>은 한계에 부딪힌다.</div>
+        <div class="sub reveal">DynamoDB는 <span class="hl">자동 Scale-Out</span> + 서버리스. 트래픽이 폭증해도 항상 일정한 응답.</div>
+      </div>
+    </section>
+
+    <!-- 4. RDB vs DynamoDB -->
+    <section class="slide" data-sec="RDB vs DynamoDB">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>RDB vs DynamoDB</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">데이터 모델</div><div class="a">RDB 고정 스키마 · <span class="k2">Dynamo Key-Value/Document</span></div></div>
+          <div class="cell reveal"><div class="q">쿼리</div><div class="a">RDB SQL·JOIN 자유 · <span class="k2">Dynamo PK/SK 조회만</span></div></div>
+          <div class="cell reveal"><div class="q">확장</div><div class="a">RDB Scale-Up · <span class="k2">Dynamo 자동 Scale-Out</span></div></div>
+          <div class="cell reveal"><div class="q">관리·비용</div><div class="a">RDB 인스턴스 고정 · <span class="k2">Dynamo 서버리스·요청당</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. 핵심 개념 지도 -->
+    <section class="slide" data-sec="개념 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>핵심 개념, 한눈에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">키 구조 (PK / SK)</span><span class="d">데이터 분산 + 정렬·범위의 <b>기본 축</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">쿼리 방식</span><span class="d">GetItem · Query는 <b>O.K</b>, Scan은 <b>금지</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">GSI</span><span class="d">PK가 아닌 속성으로 조회 <b>(남발 금지)</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">접근 패턴 우선 설계</span><span class="d">쿼리를 먼저, 테이블은 <b>그에 맞춰서</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">Single Table Design</span><span class="d">한 테이블에 여러 엔티티 · <b>JOIN 대체</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. ① 키 구조 -->
+    <section class="slide" data-sec="① 키 구조">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① 키 구조 — PK / SK</h2><span class="idx">분산 + 정렬</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>orders table · key schema</div>
+<pre><span class="c"># Partition Key — 데이터 분산 기준 (필수)</span>
+<span class="ty">PK</span> = userId      <span class="c">// 사용자별로 파티션이 나뉜다</span>
+
+<span class="c"># Sort Key — PK 내부 정렬·범위 (선택)</span>
+<span class="ty">SK</span> = orderId     <span class="c">// 한 사용자의 주문이 정렬되어 저장</span></pre>
+        </div>
+        <div class="sub reveal">PK는 <span class="hl">어디에 저장할지</span>, SK는 <span class="hl">그 안에서 어떻게 정렬·범위 조회할지</span>를 정한다.</div>
+      </div>
+    </section>
+
+    <!-- 7. ② 쿼리 — 가능 -->
+    <section class="slide" data-sec="② 쿼리 · 가능">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 쿼리 — 되는 것</h2><span class="idx">효율적</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>fast paths</div>
+<pre><span class="g">GetItem</span>  <span class="c">// PK + SK 단건 조회 → O(1)</span>
+<span class="g">Query</span>    <span class="c">// PK 고정 + SK 범위 조회 → 효율적</span>
+
+<span class="c">// 예: user-1의 order-001 ~ order-003</span>
+<span class="k">WHERE</span> userId = <span class="s">"user-1"</span>
+  <span class="k">AND</span> orderId <span class="k">BETWEEN</span> <span class="s">"order-001"</span> <span class="k">AND</span> <span class="s">"order-003"</span></pre>
+        </div>
+        <div class="sub reveal">키를 알고 들어가면 <span class="hl">언제나 single-digit ms</span>. 이게 DynamoDB의 본령.</div>
+      </div>
+    </section>
+
+    <!-- 8. ② 쿼리 — Scan 금지 -->
+    <section class="slide" data-sec="② 쿼리 · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>② 안 되는 것 — Scan / JOIN</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            <b>Scan</b>은 전체 테이블을 순회한다 — 운영에서 절대 금지
+            <span class="dim">JOIN 불가 · SUM·AVG 집계 불가 → 집계는 애플리케이션·별도 분석 스토어에서 처리.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ DynamoDB는 <span class="hl">키로 찌르는 DB</span>. 훑는 순간 NoSQL의 장점이 사라진다.</div>
+      </div>
+    </section>
+
+    <!-- 9. ③ GSI -->
+    <section class="slide" data-sec="③ GSI">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ GSI — 다른 축으로 조회</h2><span class="idx">보조 인덱스</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>Global Secondary Index</div>
+<pre><span class="c">// 메인: PK = userId, SK = orderId</span>
+
+<span class="c">// GSI-1 (상태별): status = "PAID"를 최신순으로</span>
+<span class="ty">GSI-1</span>  PK = status     SK = createdAt
+
+<span class="c">// GSI-2 (상품별): 특정 상품의 주문 이력</span>
+<span class="ty">GSI-2</span>  PK = productId  SK = createdAt</pre>
+        </div>
+        <div class="callout reveal" style="margin-top:34px;">
+          <span class="ico">⚠️</span>
+          <div class="body">GSI마다 <b>별도 비용 + 쓰기 시 GSI도 갱신</b> <span class="dim">→ 정말 필요한 접근 패턴에만. GSI 남발 금지.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. ④ 접근 패턴 먼저 -->
+    <section class="slide" data-sec="④ 접근 패턴 우선">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>④ 접근 패턴을 먼저</h2></div>
+        <div class="statement reveal" style="font-size:58px; line-height:1.35;">RDB: 데이터 구조 먼저.<br /><span class="em">DynamoDB: 쿼리(접근 패턴) 먼저.</span></div>
+        <div class="sub reveal">"무엇을 조회할지"를 모두 적어두고 → 그 패턴을 <span class="hl">전부 만족하는 PK/SK</span>를 거꾸로 설계한다.</div>
+      </div>
+    </section>
+
+    <!-- 11. ④ 접근 패턴 → 키 설계 -->
+    <section class="slide" data-sec="④ 패턴 → 키">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>패턴을 키로 옮기면</h2><span class="idx">예시</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>access patterns → key design</div>
+<pre><span class="c"># 접근 패턴</span>
+<span class="c"># 1) 사용자별 주문 목록  2) 주문 단건</span>
+<span class="c"># 3) 특정 기간 주문      4) 상태별 주문</span>
+
+<span class="ty">PK</span> = USER#{userId}
+<span class="ty">SK</span> = ORDER#{createdAt}#{orderId}
+<span class="ty">GSI-1</span>  PK = STATUS#{status}  SK = {createdAt}</pre>
+        </div>
+        <div class="sub reveal">1~3번은 메인 키로, 4번은 GSI로 — <span class="hl">모든 패턴이 키 하나로 풀린다.</span></div>
+      </div>
+    </section>
+
+    <!-- 12. ⑤ Single Table Design -->
+    <section class="slide" data-sec="⑤ Single Table">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>⑤ Single Table Design</h2><span class="idx">JOIN 대체</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>한 테이블 · 여러 엔티티 (PK/SK 접두사로 구분)</div>
+<pre><span class="ty">USER#001</span>      <span class="s">PROFILE</span>             { name, email }
+<span class="ty">USER#001</span>      <span class="s">ORDER#2026-03-01#A1</span> { amount, status }
+<span class="ty">USER#001</span>      <span class="s">ORDER#2026-03-15#A2</span> { amount, status }
+<span class="ty">PRODUCT#P100</span>  <span class="s">INFO</span>                { name, price }</pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:34px;">
+          <span class="ico">✅</span>
+          <div class="body">한 번의 <b>Query</b>로 사용자 + 주문을 동시에 — RDB의 JOIN을 키 설계로 대체한다.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 13. 적합한 경우 -->
+    <section class="slide" data-sec="언제 쓰나">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>이럴 때 쓴다</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">✓</span><span class="t">세션 저장소</span><span class="d">Key-Value · <b>빠른 읽기/쓰기</b></span></div>
+          <div class="row reveal"><span class="n">✓</span><span class="t">게임 리더보드</span><span class="d"><b>높은 쓰기 처리량</b></span></div>
+          <div class="row reveal"><span class="n">✓</span><span class="t">IoT 센서 데이터</span><span class="d">대량 쓰기 · <b>시계열</b></span></div>
+          <div class="row reveal"><span class="n">✓</span><span class="t">장바구니 · 이벤트 로그</span><span class="d">사용자별 독립 · <b>Append + 범위 조회</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14. 부적합한 경우 -->
+    <section class="slide" data-sec="언제 안 쓰나">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>이럴 땐 RDB로</h2></div>
+        <div class="callout reveal">
+          <span class="ico">💥</span>
+          <div class="body">
+            복잡한 <b>JOIN</b> · <b>Ad-hoc 쿼리</b> · <b>집계/분석</b>
+            <span class="dim">쿼리 패턴이 미리 정해지지 않거나, 관계가 복잡하거나, 강한 정합성이 필수라면 — RDB가 맞다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">DynamoDB 기본은 <span class="hl">Eventual Consistency</span>. 강한 일관성이 늘 필요하면 신중히.</div>
+      </div>
+    </section>
+
+    <!-- 15. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.45;">
+          “<span class="em">키 기반 조회 + 일관된 ms 응답</span>이면 DynamoDB.<br />
+          RDB와 반대로 <span class="em">접근 패턴을 먼저</span> 정의하고 PK/SK를 설계하고,<br />
+          <span class="em">Single Table</span>로 JOIN 없이 한 Query로 가져온다.”
+        </div>
+        <div class="sub reveal">복잡한 JOIN·집계면 RDB, 대량 단순 읽기/쓰기면 Dynamo — <span class="hl">완전 관리형·자동 확장이 최대 장점.</span></div>
+      </div>
+    </section>
+
+    <!-- 16. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/DynamoDB">DynamoDB.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../database/샤딩과-레플리카">샤딩과 레플리카</a> · <a href="../../database/쿼리-최적화-튜닝">쿼리 최적화·튜닝</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

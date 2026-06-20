@@ -135,8 +135,7 @@ Consumer Group: Consumer 1개 → 3개 파티션 혼자 처리 (느림)
 kafkaTemplate.send("order-events", userId.toString(), orderEvent);
 //                                  ^^^^^^^^^ key
 
-// userId=1 → 항상 Partition 0
-// userId=2 → 항상 Partition 1
+// 같은 key는 항상 같은 파티션으로 (어떤 파티션인지는 murmur2 해시로 결정, key 값과 파티션 번호가 일치하는 건 아님)
 // → 같은 사용자의 이벤트는 순서 보장
 ```
 
@@ -163,7 +162,7 @@ public DefaultErrorHandler errorHandler(KafkaTemplate<String, Object> template) 
 }
 
 // 실패 흐름:
-// 1차 시도 실패 → 1초 대기 → 2차 시도 실패 → 1초 대기 → 3차 시도 실패
+// 최초 시도 실패 → 1초 대기 → 재시도 1 실패 → 1초 대기 → 재시도 2 실패 → 1초 대기 → 재시도 3 실패 (총 4회 시도)
 // → DLT(order-events.DLT)로 이동 → 나중에 수동 처리 or 알림
 ```
 

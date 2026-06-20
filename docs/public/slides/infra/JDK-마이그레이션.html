@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JDK 마이그레이션 — Pocket Senior 슬라이드</title>
+<meta name="description" content="JDK 8 → JDK 21 마이그레이션, 무엇을 고려할까 — javax→jakarta · 모듈 · 의존성 · GC · Virtual Thread — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">JDK-마이그레이션</span>.md</span></div>
+      <div class="ide-path">infra — UTF-8 · LF</div>
+      <a class="tab-back" href="../../infra/JDK-마이그레이션">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">17</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category infra · 버전 업그레이드</div>
+        <h1 class="reveal"><span class="hash"># </span>JDK<br /><span class="np">마이그레이션</span><span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"JDK 8 → 21, 무엇을 고려했나?"</span><span class="op">;</span><br />
+          <span class="op">// 단순 버전 업이 아니다.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">버전 업이 아니라 <span class="em-r">호환성 점검</span>이다.</div>
+        <div class="sub reveal">삭제된 API · 모듈 시스템 · 의존성 · GC를 <span class="hl">전부 확인</span>해야 한다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 왜 21인가 -->
+    <section class="slide" data-sec="왜 21">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>왜 JDK 21인가</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">8</span><span class="t">레거시 LTS</span><span class="d">아직 가장 많이 쓰임 · <b>Oracle은 유료 연장</b></span></div>
+          <div class="row reveal"><span class="n">17</span><span class="t">현재 타겟 LTS</span><span class="d">많은 프로젝트의 현행 버전 · <b>javax→jakarta 분기</b></span></div>
+          <div class="row reveal"><span class="n">21</span><span class="t">최신 LTS</span><span class="d">2031까지 지원 · <b>Virtual Thread · Generational ZGC</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 핵심 개념 지도 -->
+    <section class="slide" data-sec="고려사항 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>고려할 것, 4가지 + 1</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">삭제·변경 API</span><span class="d">javax→jakarta 전환이 <b>가장 크다</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">모듈 시스템</span><span class="d">JPMS · 리플렉션 라이브러리가 <b>깨질 수 있다</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">의존성 호환성</span><span class="d">Spring Boot 3.2+ · Hibernate 6.x <b>버전 정렬</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">GC 변경</span><span class="d">기본이 <b>G1</b> · ZGC도 프로덕션 가능</span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">Virtual Thread</span><span class="d">가장 큰 변화 · <b>I/O 처리량 대폭 개선</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. ① javax → jakarta -->
+    <section class="slide" data-sec="① 삭제 API">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① javax → jakarta</h2><span class="idx">가장 큰 변화</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>Entity.java</div>
+<pre><span class="k">import</span> javax.persistence.<span class="ty">Entity</span>;    <span class="c">// ❌ 구 네임스페이스</span>
+<span class="k">import</span> jakarta.persistence.<span class="ty">Entity</span>;  <span class="c">// ✅ 변경</span></pre>
+        </div>
+        <div class="sub reveal">JDK가 지운 게 아니다 — <span class="hl">Jakarta EE 9의 네임스페이스 변경</span>. Spring Boot 3+ / Hibernate 6+가 강제한다.</div>
+      </div>
+    </section>
+
+    <!-- 6. 삭제된 모듈/엔진 -->
+    <section class="slide" data-sec="① 삭제 API · 모듈">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>사라진 것들</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">JAXB</span><span class="t">javax.xml.bind</span><span class="d">JDK 11부터 제거 · <b>jakarta.xml.bind 의존성 추가</b></span></div>
+          <div class="row reveal"><span class="n">JS</span><span class="t">Nashorn 엔진</span><span class="d">JDK 15에서 삭제 · <b>GraalJS로 대체</b></span></div>
+          <div class="row reveal"><span class="n">Sec</span><span class="t">Security Manager</span><span class="d">JEP 411 deprecated · <b>실제 삭제는 JDK 24</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. ② 모듈 시스템 -->
+    <section class="slide" data-sec="② 모듈 시스템">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 모듈 시스템 (JPMS)</h2><span class="idx">JDK 9+</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>리플렉션으로 내부 API 접근 시 터진다</div>
+<pre><span class="k">java.lang.reflect.InaccessibleObjectException</span>:
+  Unable to make field <span class="ty">java.lang.String.value</span> accessible
+
+<span class="c"># 해결: JVM 옵션에 --add-opens 추가</span>
+--add-opens java.base/java.lang=ALL-UNNAMED</pre>
+        </div>
+        <div class="sub reveal">JDK 8은 classpath로 전부 접근, <span class="hl">JDK 9+는 모듈 경계로 제한</span>. 내부 API 찌르던 라이브러리가 깨진다.</div>
+      </div>
+    </section>
+
+    <!-- 8. ③ 의존성 호환성 -->
+    <section class="slide" data-sec="③ 의존성">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ 의존성 호환성</h2><span class="idx">버전 정렬</span></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">SB</span><span class="t">Spring Boot</span><span class="d">JDK 21은 <b>3.2+ 필수</b> · 2.x는 JDK 17까지</span></div>
+          <div class="row reveal"><span class="n">H</span><span class="t">Hibernate</span><span class="d">6.x 필요 · <b>javax→jakarta 동반</b></span></div>
+          <div class="row reveal"><span class="n">Q</span><span class="t">QueryDSL · Jackson</span><span class="d">QueryDSL 5.x(jakarta) · <b>Jackson 2.15+</b></span></div>
+          <div class="row reveal"><span class="n">B</span><span class="t">빌드 도구</span><span class="d">Gradle <b>8.3+</b> · Maven <b>3.9+</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. ④ GC 변경 -->
+    <section class="slide" data-sec="④ GC 변경">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>④ GC, 기본값이 바뀐다</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>기본 GC 변화</div>
+<pre>JDK 8  기본: <span class="ty">Parallel GC</span>
+JDK 9~21 기본: <span class="g">G1 GC</span>  <span class="c">// JDK 9부터 변경</span>
+
+<span class="c"># 추천 시작점</span>
+-XX:+UseG1GC -XX:MaxGCPauseMillis=<span class="nu">200</span></pre>
+        </div>
+        <div class="sub reveal">기존 GC 튜닝 옵션이 <span class="hl">무효화될 수 있다</span>. 저지연이 중요하면 JDK 21의 <span class="hl">Generational ZGC</span>.</div>
+      </div>
+    </section>
+
+    <!-- 10. ⑤ Virtual Thread Before/After -->
+    <section class="slide" data-sec="⑤ Virtual Thread">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>⑤ Virtual Thread</h2><span class="idx">가장 큰 변화</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>Platform Thread → Virtual Thread</div>
+<pre><span class="c">// Before: 무거움, 수천 개 한계</span>
+<span class="ty">Executors</span>.<span class="fn">newFixedThreadPool</span>(<span class="nu">200</span>);
+
+<span class="c">// After: 가벼움, 수백만 개 가능</span>
+<span class="ty">Executors</span>.<span class="fn">newVirtualThreadPerTaskExecutor</span>();</pre>
+        </div>
+        <div class="sub reveal">경량 스레드로 <span class="hl">I/O 바운드 처리량</span>이 폭발적으로 늘어난다. CPU 바운드엔 효과 없음.</div>
+      </div>
+    </section>
+
+    <!-- 11. Virtual Thread 설정 한 줄 -->
+    <section class="slide" data-sec="⑤ Virtual Thread · 설정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Spring Boot 3.2+ 설정 한 줄</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>application.yml</div>
+<pre><span class="k">spring</span>:
+  <span class="k">threads</span>:
+    <span class="k">virtual</span>:
+      <span class="k">enabled</span>: <span class="g">true</span></pre>
+        </div>
+        <div class="sub reveal">→ Tomcat이 <span class="hl">Virtual Thread로 요청을 처리</span>. 설정 한 줄로 동시 처리량이 크게 오른다.</div>
+      </div>
+    </section>
+
+    <!-- 12. Virtual Thread 함정 -->
+    <section class="slide" data-sec="⑤ Virtual Thread · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>Virtual Thread 함정</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            <b>synchronized</b>가 carrier thread를 묶는다 (pinning)
+            <span class="dim">→ Lock 전환 권장. ThreadLocal 남용은 메모리 부담. DB 커넥션은 유한하니 풀 사이즈를 다시 점검.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">스레드가 수백만 개여도 <span class="hl">커넥션 풀이 병목</span>이면 의미 없다.</div>
+      </div>
+    </section>
+
+    <!-- 13. 전략: 단계적 -->
+    <section class="slide" data-sec="전략 · 단계">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>전략 — 4단계로 나눠라</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">P1</span><span class="t">빌드 확인</span><span class="d">JDK 21 컴파일 · 에러 수정 · <b>의존성 업그레이드</b></span></div>
+          <div class="row reveal"><span class="n">P2</span><span class="t">테스트</span><span class="d">전체 스위트 실행 · <b>성능 벤치마크</b></span></div>
+          <div class="row reveal"><span class="n">P3</span><span class="t">스테이징</span><span class="d">GC·메모리·응답시간 모니터링 · <b>카나리 10%</b></span></div>
+          <div class="row reveal"><span class="n">P4</span><span class="t">운영 배포</span><span class="d">10→30→50→100% · <b>JDK 8 빌드 롤백 준비</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14. 한 번에 8→21은 위험 -->
+    <section class="slide" data-sec="전략 · 경로">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>한 번에 8 → 21은 위험</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>권장 경로 — 징검다리로 건넌다</div>
+<pre>JDK 8 → JDK <span class="nu">11</span>  <span class="c">// 모듈 시스템 적응</span>
+      → JDK <span class="nu">17</span>  <span class="c">// javax → jakarta</span>
+      → JDK <span class="nu">21</span>  <span class="c">// Virtual Thread 등</span></pre>
+        </div>
+        <div class="sub reveal">또는 프레임워크와 함께: <span class="hl">Spring Boot 2.x+8 → 3.x+17 → JDK 21</span>(런타임만).</div>
+      </div>
+    </section>
+
+    <!-- 15. 선택 가이드 -->
+    <section class="slide" data-sec="선택 가이드">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>어디부터 손볼까</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">컴파일이 안 된다?</div><div class="a"><span class="k2">javax → jakarta</span> 전환부터</div></div>
+          <div class="cell reveal"><div class="q">리플렉션 예외가 뜬다?</div><div class="a"><span class="k2">--add-opens</span> JVM 옵션 추가</div></div>
+          <div class="cell reveal"><div class="q">처리량을 올리고 싶다?</div><div class="a"><span class="k2">Virtual Thread</span> (I/O 바운드)</div></div>
+          <div class="cell reveal"><div class="q">위험을 줄이고 싶다?</div><div class="a"><span class="k2">징검다리 + 카나리 10%</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.45;">
+          “<span class="em">삭제 API(javax→jakarta) · 의존성 · 모듈 · GC</span> 4가지를 보고,<br />
+          <span class="em-r">한 번에 8→21이 아니라 징검다리</span>로,<br />
+          스테이징 검증 후 <span class="em">카나리 10%</span>로 시작합니다.”
+        </div>
+        <div class="sub reveal">가장 큰 이점인 <span class="hl">Virtual Thread</span>는 Spring Boot 3.2+에서 설정 한 줄로 활성화.</div>
+      </div>
+    </section>
+
+    <!-- 17. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../infra/JDK-마이그레이션">JDK 마이그레이션.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../database/트랜잭션-관리">트랜잭션 관리</a> · <a href="../../traffic/대용량-트래픽-대응">대용량 트래픽 대응</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

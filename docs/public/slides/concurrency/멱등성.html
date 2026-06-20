@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>멱등성 — Pocket Senior 슬라이드</title>
+<meta name="description" content="같은 요청이 여러 번 와도 결과가 같게 만드는 방법은? — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">멱등성</span>.md</span></div>
+      <div class="ide-path">concurrency — UTF-8 · LF</div>
+      <a class="tab-back" href="../../concurrency/멱등성">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">17</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category concurrency · 중복 요청 방어</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">멱등성</span><span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"같은 요청이 여러 번 와도 결과를 같게?"</span><span class="op">;</span><br />
+          <span class="op">// 한 번 하든 열 번 하든 결과는 하나여야 한다.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">한 번 하든 열 번 하든 <span class="em">결과는 같다.</span></div>
+        <div class="sub reveal">못 지키면 <span class="hl">돈이 두 번 빠지고, 알림이 열 번 간다.</span></div>
+      </div>
+    </section>
+
+    <!-- 3. 왜 중요한가 — 중복은 반드시 온다 -->
+    <section class="slide" data-sec="문제">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>요청은 반드시 중복된다</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">1</span><span class="t">네트워크 타임아웃</span><span class="d">응답을 못 받은 클라이언트가 <b>재시도</b></span></div>
+          <div class="row reveal"><span class="n">2</span><span class="t">LB · MQ 재전달</span><span class="d">로드밸런서 retry · MQ <b>at-least-once</b></span></div>
+          <div class="row reveal"><span class="n">3</span><span class="t">사용자 더블 클릭</span><span class="d">버튼 두 번 → 요청 <b>두 번</b></span></div>
+          <div class="row reveal"><span class="n">4</span><span class="t">모바일 끊김</span><span class="d">네트워크 단절 → 자동 <b>재전송</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 결제 사고 시나리오 -->
+    <section class="slide" data-sec="문제 · 사고">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>멱등하지 않은 결제 API</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>응답 전송 중 네트워크가 끊기면…</div>
+<pre>Client → 결제 요청 → Server <span class="g">처리 완료</span> → 응답 중 <span class="k">끊김</span>
+Client → 응답 못 받음 → <span class="s">"실패인가?"</span> → 재시도
+Server → 또 결제 실행 → <span class="k">돈 2배 빠짐</span> 💥</pre>
+        </div>
+        <div class="sub reveal">서버는 처리했지만 클라이언트는 <span class="hl">성공을 모른다</span>. 그래서 또 보낸다.</div>
+      </div>
+    </section>
+
+    <!-- 5. HTTP 메서드별 멱등성 -->
+    <section class="slide" data-sec="HTTP 메서드">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>HTTP 메서드, 어디가 위험한가</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">O</span><span class="t">GET · HEAD · PUT · DELETE</span><span class="d">조회·전체교체·삭제는 <b>몇 번이든 결과 동일</b></span></div>
+          <div class="row reveal"><span class="n">X</span><span class="t">POST</span><span class="d">생성 → 매번 새 리소스 · <b>항상 비멱등</b></span></div>
+          <div class="row reveal"><span class="n">△</span><span class="t">PATCH</span><span class="d"><b>stock += 1</b> 비멱등 · <b>status = CANCELLED</b> 멱등</span></div>
+        </div>
+        <div class="sub reveal" style="margin-top:40px;">→ 멱등성 보장이 필요한 건 <span class="hl">POST · 일부 PATCH</span>다.</div>
+      </div>
+    </section>
+
+    <!-- 6. 핵심 개념 지도 -->
+    <section class="slide" data-sec="구현 패턴 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>구현 패턴 5가지, 한눈에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Idempotency Key</span><span class="d">클라이언트 고유 키로 처리 여부 확인 · <b>가장 범용</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">DB Unique 제약</span><span class="d">유니크 컬럼이 중복을 막음 · <b>가장 간단</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">상태 기반</span><span class="d">상태 머신으로 이미 전이됐으면 <b>무시</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">CAS</span><span class="d">WHERE 조건 + 로그 체크로 <b>DB 레벨 멱등</b></span></div>
+          <div class="row reveal"><span class="n">⑤</span><span class="t">MQ Consumer</span><span class="d">EventId로 중복 메시지 <b>걸러냄</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. ① Idempotency Key -->
+    <section class="slide" data-sec="① Idempotency Key">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① Idempotency Key</h2><span class="idx">가장 범용</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>PaymentController.java</div>
+<pre><span class="an">@PostMapping</span>(<span class="s">"/payments"</span>)
+<span class="ty">ResponseEntity</span> <span class="fn">pay</span>(<span class="an">@RequestHeader</span>(<span class="s">"Idempotency-Key"</span>) <span class="ty">String</span> key) {
+    <span class="k">if</span> (store.<span class="fn">find</span>(key).<span class="fn">isPresent</span>())  <span class="c">// 이미 처리?</span>
+        <span class="k">return</span> ok(store.<span class="fn">get</span>(key));    <span class="c">// 저장된 결과 반환</span>
+    <span class="c">// 처음 보는 키 → 실제 처리 후 결과 저장 (TTL 24h)</span>
+}</pre>
+        </div>
+        <div class="sub reveal">클라이언트가 <span class="hl">고유 키</span>를 보내고, 서버는 <span class="hl">이 키로 처리했는지</span>만 본다.</div>
+      </div>
+    </section>
+
+    <!-- 8. Key 저장소 + 동시 중복 방어 -->
+    <section class="slide" data-sec="① Key · Redis 락">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>동시 중복은 Redis SET NX로</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>RedisIdempotencyStore.java</div>
+<pre><span class="k">boolean</span> <span class="fn">tryLock</span>(<span class="ty">String</span> key) {
+    <span class="c">// SET NX — 없을 때만 저장 (Lock 역할), 30s 자동 해제</span>
+    <span class="k">return</span> redis.<span class="fn">setIfAbsent</span>(
+        <span class="s">"idem:lock:"</span> + key, <span class="s">"PROCESSING"</span>, <span class="ty">Duration</span>.<span class="fn">ofSeconds</span>(<span class="nu">30</span>));
+}
+<span class="c">// 락 실패 → 409 Conflict "처리 중입니다"</span></pre>
+        </div>
+        <div class="sub reveal" style="margin-top:36px;">Key 생성 주체: <span class="hl">클라이언트가 UUID 생성</span>해야 재시도 시 같은 키를 쓴다.</div>
+      </div>
+    </section>
+
+    <!-- 9. ② DB Unique 제약 -->
+    <section class="slide" data-sec="② DB Unique">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② DB Unique 제약</h2><span class="idx">가장 간단</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>payment 테이블 + 저장 로직</div>
+<pre><span class="k">CREATE</span> <span class="k">TABLE</span> payment (
+    idempotency_key <span class="ty">VARCHAR</span>(<span class="nu">64</span>) <span class="k">NOT NULL</span> <span class="k">UNIQUE</span>  <span class="c">-- 이것만으로 방지</span>
+);
+
+<span class="k">try</span> { paymentRepository.<span class="fn">save</span>(payment); }
+<span class="k">catch</span> (<span class="ty">DataIntegrityViolationException</span> e) {
+    <span class="k">return</span> repo.<span class="fn">findByIdempotencyKey</span>(key);  <span class="c">// 이미 처리됨</span>
+}</pre>
+        </div>
+        <div class="sub reveal" style="margin-top:34px;">DB가 <span class="hl">유니크 위반</span>을 던지면, 기존 결과를 조회해 돌려준다.</div>
+      </div>
+    </section>
+
+    <!-- 10. ③ 상태 기반 멱등성 -->
+    <section class="slide" data-sec="③ 상태 기반">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ 상태 기반 — 상태 머신</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>Order.java</div>
+<pre><span class="k">public</span> <span class="k">void</span> <span class="fn">pay</span>() {
+    <span class="k">if</span> (status != <span class="ty">PENDING</span>) <span class="k">return</span>;  <span class="c">// 이미 결제·취소 → 무시</span>
+    <span class="k">this</span>.status = <span class="ty">PAID</span>;
+}
+<span class="k">public</span> <span class="k">void</span> <span class="fn">cancel</span>() {
+    <span class="k">if</span> (status == <span class="ty">CANCELLED</span>) <span class="k">return</span>;  <span class="c">// 이미 취소 → 멱등</span>
+}</pre>
+        </div>
+        <div class="sub reveal">상태 전이가 명확하면, 같은 요청이 와도 <span class="hl">이미 전이된 상태</span>라 안전하다.</div>
+      </div>
+    </section>
+
+    <!-- 11. ④ CAS — DB 레벨 멱등 -->
+    <section class="slide" data-sec="④ CAS">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>④ CAS — 차감을 멱등하게</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>포인트 차감: 로그에 없을 때만 실행</div>
+<pre><span class="c">-- 비멱등: 2번 실행하면 200 차감</span>
+<span class="k">UPDATE</span> wallet <span class="k">SET</span> balance = balance - <span class="nu">100</span> <span class="k">WHERE</span> user_id = <span class="nu">1</span>;
+
+<span class="c">-- 멱등: 트랜잭션 로그에 없을 때만 차감</span>
+<span class="k">UPDATE</span> wallet <span class="k">SET</span> balance = balance - <span class="nu">100</span>
+<span class="k">WHERE</span> user_id = <span class="nu">1</span> <span class="k">AND</span> <span class="k">NOT EXISTS</span> (
+  <span class="k">SELECT</span> <span class="nu">1</span> <span class="k">FROM</span> transaction_log <span class="k">WHERE</span> transaction_id = <span class="s">'txn-abc'</span>);</pre>
+        </div>
+        <div class="sub reveal" style="margin-top:32px;">로그에 이미 있으면 <span class="hl">UPDATE가 0행</span> → 두 번째 실행은 아무 일도 안 한다.</div>
+      </div>
+    </section>
+
+    <!-- 12. ⑤ MQ Consumer 멱등성 -->
+    <section class="slide" data-sec="⑤ MQ Consumer">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>⑤ MQ Consumer 멱등성</h2><span class="idx">at-least-once</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>PaymentConsumer.java</div>
+<pre><span class="an">@KafkaListener</span>(topics = <span class="s">"payment-events"</span>)
+<span class="k">void</span> <span class="fn">handle</span>(<span class="ty">PaymentEvent</span> e) {
+    <span class="k">if</span> (repo.<span class="fn">existsByEventId</span>(e.<span class="fn">eventId</span>())) <span class="k">return</span>;  <span class="c">// 이미 처리</span>
+    paymentService.<span class="fn">process</span>(e);
+    repo.<span class="fn">save</span>(<span class="k">new</span> <span class="ty">ProcessedEvent</span>(e.<span class="fn">eventId</span>()));  <span class="c">// 기록</span>
+}</pre>
+        </div>
+        <div class="sub reveal">Kafka는 <span class="hl">최소 1번</span> 전달 = 중복 가능. EventId로 걸러낸다.</div>
+      </div>
+    </section>
+
+    <!-- 13. MQ 함정: 원자성 -->
+    <section class="slide" data-sec="⑤ MQ · 원자성">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>처리와 기록이 따로 놀면</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            <b>체크 → 처리 → 기록</b>이 원자적이지 않으면 구멍이 생긴다.
+            <span class="dim">처리는 됐는데 기록 직전에 죽으면 → 재전달 시 또 처리된다.</span>
+          </div>
+        </div>
+        <div class="code tight reveal" style="margin-top:34px;">
+          <div class="cap"><span class="dotc"></span>INSERT IGNORE로 원자적 처리</div>
+<pre><span class="an">@Transactional</span>
+<span class="k">void</span> <span class="fn">handleSafely</span>(<span class="ty">PaymentEvent</span> e) {
+    <span class="k">if</span> (repo.<span class="fn">insertIgnore</span>(e.<span class="fn">eventId</span>()) == <span class="nu">0</span>) <span class="k">return</span>;  <span class="c">// 이미 처리</span>
+    paymentService.<span class="fn">process</span>(e);
+}</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14. 적용 판단 기준 -->
+    <section class="slide" data-sec="적용 가이드">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>어디에 적용할까</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">결제 · 주문 생성?</div><div class="a"><span class="k2">필수</span> — Idempotency Key + DB Unique</div></div>
+          <div class="cell reveal"><div class="q">알림 발송 · 쿠폰 발급?</div><div class="a"><span class="k2">필수</span> — 발송 기록 · DB Unique</div></div>
+          <div class="cell reveal"><div class="q">포인트 적립 · 차감?</div><div class="a"><span class="k2">필수</span> — Transaction ID + CAS</div></div>
+          <div class="cell reveal"><div class="q">조회 · 좋아요 토글?</div><div class="a"><span class="k2">불필요</span> — 이미 자연스럽게 멱등</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15. 흔한 실수 -->
+    <section class="slide" data-sec="흔한 실수">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>흔한 실수 4가지</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">1</span><span class="t">TTL 없는 Key</span><span class="d">저장소 무한 증가 → <b>24~48h TTL</b></span></div>
+          <div class="row reveal"><span class="n">2</span><span class="t">실패도 캐싱</span><span class="d">재시도 불가 → <b>성공한 결과만 저장</b></span></div>
+          <div class="row reveal"><span class="n">3</span><span class="t">Key를 서버가 생성</span><span class="d">재시도 시 다른 키 → <b>클라이언트가 생성</b></span></div>
+          <div class="row reveal"><span class="n">4</span><span class="t">처리+기록 비원자</span><span class="d">기록 실패 시 중복 → <b>같은 트랜잭션</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:52px; line-height:1.45;">
+          “가장 범용은 <span class="em">Idempotency Key</span>,<br />
+          비가역 작업은 <span class="em">DB Unique + Key 이중</span>,<br />
+          MQ는 <span class="em">EventId 체크 + 처리·기록을 한 트랜잭션</span>으로.”
+        </div>
+        <div class="sub reveal">핵심은 <span class="hl">'처리 확인'과 '실제 처리'를 원자적으로</span> 만드는 것.</div>
+      </div>
+    </section>
+
+    <!-- 17. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../concurrency/멱등성">멱등성.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../concurrency/쿠폰-중복처리-정합성">쿠폰 중복처리 정합성</a> · <a href="../../concurrency/정합성-무결성-멱등성-설계">정합성·무결성·멱등성 설계</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

@@ -222,6 +222,9 @@ body::before {
   .vp-doc > div > p:first-of-type { font-size: var(--ps-text-base); }
   .vp-doc > div > p:first-of-type::first-letter { font-size: 2.7em; }
   .vp-doc blockquote { font-size: var(--ps-text-base); padding: var(--ps-space-3) var(--ps-space-4); }
+  /* 넓은 표(5열+)는 모바일에서 잘리지 않게 가로 스크롤 — 기본 테마 동작 복원
+     (.vp-doc table 의 overflow:hidden 이 라운드 코너용이라 x축 클리핑을 유발) */
+  .vp-doc table { overflow-x: auto; }
 }
 
 /* ── Sidebar ── */
