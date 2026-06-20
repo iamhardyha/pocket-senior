@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>대용량 트래픽 대응 — Pocket Senior 슬라이드</title>
+<meta name="description" content="캐싱, CDN, 로드밸런싱, 스케일링, 비동기 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">대용량-트래픽-대응</span>.md</span></div>
+      <div class="ide-path">traffic — UTF-8 · LF</div>
+      <a class="tab-back" href="../../traffic/대용량-트래픽-대응">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">16</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category traffic · 트래픽을 줄이고·분산하고·버틴다</div>
+        <h1 class="reveal"><span class="hash"># </span>대용량<br /><span class="np">트래픽</span> 대응<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"많은 트래픽에 대비하여 어떻게 하는가?"</span><span class="op">;</span><br />
+          <span class="op">// 줄인다 · 분산한다 · 버틴다 — 3개의 축</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">트래픽을 <span class="em">줄이고</span>, <span class="em">분산하고</span>,<br /><span class="em-r">버틸 수</span> 있게.</div>
+        <div class="sub reveal">처음부터 다 하지 않는다 — <span class="hl">캐싱만 잘해도 대부분 해결</span>된다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 3대 전략 지도 -->
+    <section class="slide" data-sec="전략 지도">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>3가지 축, 한눈에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">줄인다</span><span class="d">서버까지 요청이 안 오게 — <b>Caching · CDN</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">분산한다</span><span class="d">여러 서버가 나눠 받게 — <b>Load Balancing · Read Replica · Sharding</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">버틴다</span><span class="d">처리 용량을 늘려 — <b>Scaling · Async · Rate Limiting</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 캐싱 — 가장 효과적 -->
+    <section class="slide" data-sec="① 줄인다 · Caching">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>① 줄인다 — Caching</h2></div>
+        <div class="statement reveal" style="font-size:72px;">서버까지 요청이<br /><span class="em">안 오게</span> 하는 것이 최선.</div>
+        <div class="sub reveal">읽기 <span class="hl">Hit Rate 90%</span>면 읽기 DB 부하는 약 <span class="hl">1/10</span>로 줄어든다.</div>
+      </div>
+    </section>
+
+    <!-- 5. Multi-Layer Caching -->
+    <section class="slide" data-sec="캐시 계층">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>캐시는 여러 계층에</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Browser Cache</span><span class="d">클라이언트 · Cache-Control 헤더 <b>(TTL 분~일)</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">CDN</span><span class="d">Edge Server · 정적 리소스(이미지·JS·CSS) <b>(분~시간)</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">App Cache</span><span class="d">Redis/Local · 비즈니스 데이터·세션 <b>(초~분)</b></span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">DB 레벨</span><span class="d">Materialized View <b>(MySQL Query Cache 아님 — 8.0 제거)</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. Cache-Aside 코드 -->
+    <section class="slide" data-sec="Cache-Aside">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Cache-Aside 패턴</h2><span class="idx">가장 많이 씀</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>ProductService.kt</div>
+<pre><span class="k">fun</span> <span class="fn">getProduct</span>(id: <span class="ty">Long</span>): <span class="ty">Product</span> {
+    redis.<span class="fn">get</span>(<span class="s">"product:$id"</span>)?.<span class="k">let</span> { <span class="k">return</span> it }  <span class="c">// 1) Hit</span>
+    <span class="k">val</span> product = db.<span class="fn">findById</span>(id)                  <span class="c">// 2) Miss → DB</span>
+    redis.<span class="fn">set</span>(<span class="s">"product:$id"</span>, product, <span class="nu">5</span>.minutes) <span class="c">// 3) 채움</span>
+    <span class="k">return</span> product
+}</pre>
+        </div>
+        <div class="sub reveal">앱이 직접 캐시를 관리한다. 가장 단순하고 일반적. <span class="hl">쓰기형은 Write-Through / Write-Behind.</span></div>
+      </div>
+    </section>
+
+    <!-- 7. 캐시의 진짜 어려움 + MySQL Query Cache 함정 -->
+    <section class="slide" data-sec="캐시 · 함정">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>캐시의 진짜 어려움</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            가장 어려운 문제는 <b>Cache Invalidation</b> — "어려운 2가지: 캐시 무효화와 이름 짓기"
+            <span class="dim">그리고 MySQL Query Cache는 전역 뮤텍스 병목으로 5.7.20 deprecated → 8.0에서 완전 제거됐다. 쓰지 말 것.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:40px;">→ DB 레벨 캐싱이 필요하면 <span class="hl">Materialized View</span>를 쓴다.</div>
+      </div>
+    </section>
+
+    <!-- 8. Scale-Up vs Scale-Out -->
+    <section class="slide" data-sec="Scaling">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Scale-Up vs Scale-Out</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">Scale-Up (수직)</div><div class="a">서버 스펙 ↑ · <span class="k2">코드 변경 없음</span><br /><span style="color:var(--fg-dim);font-size:28px;">단, 물리 한계 + 단일 장애점 · 고스펙일수록 비용 비선형</span></div></div>
+          <div class="cell reveal"><div class="q">Scale-Out (수평)</div><div class="a">서버 수 ↑ · <span class="k2">이론상 무한 확장</span><br /><span style="color:var(--fg-dim);font-size:28px;">단, 상태 관리 복잡 + 정합성 · 비용 선형</span></div></div>
+        </div>
+        <div class="sub reveal">처음엔 Scale-Up, 한계 오면 Scale-Out. <span class="hl">Scale-Out엔 Stateless가 필수</span> — 세션은 Redis, 파일은 S3.</div>
+      </div>
+    </section>
+
+    <!-- 9. L4 vs L7 -->
+    <section class="slide" data-sec="② 분산 · LB">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 분산 — L4 vs L7</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">L4 (Transport)</div><div class="a"><span class="k2">IP · Port</span> 기준 · 빠름<br /><span style="color:var(--fg-dim);font-size:28px;">단순 분산 · 예: AWS NLB</span></div></div>
+          <div class="cell reveal"><div class="q">L7 (Application)</div><div class="a"><span class="k2">URL · Header · Cookie</span> 기준<br /><span style="color:var(--fg-dim);font-size:28px;">경로 기반 라우팅 · 예: ALB, Nginx</span></div></div>
+        </div>
+        <div class="sub reveal">하위 계층일수록 빠르고 단순, 상위 계층일수록 <span class="hl">똑똑한 라우팅</span>이 가능하다.</div>
+      </div>
+    </section>
+
+    <!-- 10. LB 알고리즘 -->
+    <section class="slide" data-sec="LB 알고리즘">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>분산 알고리즘</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Round Robin</span><span class="d">순서대로 배분 <b>(서버 스펙 동일할 때)</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">Least Conn</span><span class="d">연결 적은 서버로 <b>(처리 시간이 다양할 때)</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">IP Hash</span><span class="d">출발지 IP 해싱 → 같은 IP는 같은 서버 <b>(LB 무상태, 세션 유지)</b></span></div>
+        </div>
+        <div class="callout reveal" style="margin-top:34px;">
+          <span class="ico">⚠️</span>
+          <div class="body">IP Hash는 <b>서버 수가 바뀌면 재분배</b>되어 세션이 유실될 수 있다 <span class="dim">+ NAT/CGNAT 뒤 다수 클라이언트가 한 IP를 공유하면 쏠림 발생</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. Read Replica -->
+    <section class="slide" data-sec="Read Replica">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Read Replica로 읽기 분산</h2></div>
+        <div class="statement reveal" style="font-size:64px;">읽기 트래픽이 <span class="em">80% 이상</span>인<br />서비스가 대부분.</div>
+        <div class="callout reveal" style="margin-top:40px;">
+          <span class="ico">⚠️</span>
+          <div class="body"><b>Replication Lag</b> — 쓰기 직후 Replica에서 읽으면 이전 데이터가 보일 수 있다 <span class="dim">Write는 Primary, Read는 Replica로 분산. 강한 일관성이 필요하면 Primary 읽기.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. 비동기 처리 -->
+    <section class="slide" data-sec="③ 버틴다 · Async">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ 버틴다 — 비동기 처리</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>모든 요청을 즉시 처리할 필요는 없다</div>
+<pre><span class="c">// 동기: 결제 → 재고 → 알림 → 응답 (3초)</span>
+Client → API → 결제 → 재고차감 → 알림 → <span class="g">Response</span>
+
+<span class="c">// 비동기: 핵심만 처리하고 응답 (0.5초)</span>
+Client → API → 결제 → <span class="g">Response</span>
+                 ↳ <span class="ty">Message Queue</span> → 재고차감 · 알림</pre>
+        </div>
+        <div class="sub reveal">응답 시간 ↓ · 각 처리가 <span class="hl">독립적으로 실패·재시도</span> 가능. 도구: Kafka · RabbitMQ · SQS.</div>
+      </div>
+    </section>
+
+    <!-- 13. Rate Limiting -->
+    <section class="slide" data-sec="Rate Limiting">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Rate Limiting</h2><span class="idx">초과 → 429</span></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Token Bucket</span><span class="d">일정 속도로 토큰 충전, 있을 때만 허용 <b>(버스트 허용)</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">Sliding Window</span><span class="d">시간 창 내 요청 수 제한 <b>(정확하지만 메모리 사용)</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">Fixed Window</span><span class="d">고정 시간 단위 카운트 <b>(간단하나 경계에서 2배 허용 가능)</b></span></div>
+        </div>
+        <div class="sub reveal">처리 용량 이상의 요청은 <span class="hl">429 Too Many Requests</span>로 거부해 시스템을 지킨다.</div>
+      </div>
+    </section>
+
+    <!-- 14. 실무 적용 순서 + 면접 -->
+    <section class="slide" data-sec="적용 순서">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>실무는 단계적으로</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">1</span><span class="t">캐싱 (Redis·CDN)</span><span class="d">DB 부하 급감 <b>← 여기서 대부분 해결</b></span></div>
+          <div class="row reveal"><span class="n">2</span><span class="t">Read Replica</span><span class="d">읽기 분산</span></div>
+          <div class="row reveal"><span class="n">3</span><span class="t">Auto Scaling</span><span class="d">트래픽 대응 탄력성</span></div>
+          <div class="row reveal"><span class="n">4</span><span class="t">비동기 (MQ)</span><span class="d">응답 시간 단축</span></div>
+          <div class="row reveal"><span class="n">5</span><span class="t">샤딩</span><span class="d">쓰기 분산 <b>(최후 수단 — 극소수만 필요)</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:52px; line-height:1.45;">
+          “3가지 축으로 접근합니다.<br />
+          <span class="em">캐싱</span>으로 트래픽을 줄이고,<br />
+          <span class="em">로드밸런싱·Read Replica</span>로 분산하고,<br />
+          <span class="em">Auto Scaling·비동기</span>로 처리 용량을 늘립니다.”
+        </div>
+        <div class="sub reveal">핵심: <span class="hl">단계적으로 적용한다 — 캐싱만 잘해도 대부분 해결된다.</span></div>
+      </div>
+    </section>
+
+    <!-- 16. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../traffic/대용량-트래픽-대응">대용량 트래픽 대응.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../traffic/부하-분산-아키텍처">부하 분산 아키텍처</a> · <a href="../../traffic/스파이크-트래픽-대처">스파이크 트래픽 대처</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>
