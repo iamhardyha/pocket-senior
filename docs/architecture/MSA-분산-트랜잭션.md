@@ -3,6 +3,7 @@ tags: [MSA, 트랜잭션, Saga, 분산처리, Kafka]
 question: "MSA 분산 트랜잭션 — Saga, Outbox, 보상 트랜잭션"
 status: 🟢
 order: 3
+slides: true
 ---
 
 # MSA 분산 트랜잭션
@@ -804,6 +805,8 @@ public class OutboxPollingPublisher {
 
                 OutboxEvent published = event.markPublished();
                 outboxRepository.save(published);
+                // ⚠️ send 성공 후 markPublished 커밋이 실패하면 다음 폴링에서 재발행된다.
+                //    → Outbox는 본질적으로 at-least-once, 소비자 멱등성 처리 필수.
             } catch (Exception e) {
                 log.error("Outbox 발행 실패: {}", event.getId(), e);
                 break;  // 순서 보장을 위해 중단

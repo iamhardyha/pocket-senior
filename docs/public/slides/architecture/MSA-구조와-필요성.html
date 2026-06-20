@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MSA 구조와 필요성 — Pocket Senior 슬라이드</title>
+<meta name="description" content="MSA, 분산처리, Bounded Context, Database per Service, Circuit Breaker, Strangler Fig — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">MSA-구조와-필요성</span>.md</span></div>
+      <div class="ide-path">architecture — UTF-8 · LF</div>
+      <a class="tab-back" href="../../architecture/MSA-구조와-필요성">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">18</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category architecture · 분산 시스템의 선택</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">MSA</span> 구조와<br />필요성<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"MSA는 왜 필요하고, 어떤 구조·원칙으로 설계하는가?"</span><span class="op">;</span><br />
+          <span class="op">// 언제 나누고, 무엇을 대가로 치르는가?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">MSA는 <span class="em-r">조직의 문제</span>를 푸는 도구다.</div>
+        <div class="sub reveal">독립 배포·확장 요구가 Monolith의 결합도를 못 견딜 때 — 그리고 <span class="hl">분산 복잡성이라는 대가</span>를 반드시 치른다.</div>
+      </div>
+    </section>
+
+    <!-- 3. Monolith의 한계 -->
+    <section class="slide" data-sec="문제">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>왜 Monolith가 아픈가</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">!</span><span class="t">배포 지옥</span><span class="d">1줄 수정에도 전체 빌드·회귀 테스트 · <b>팀 간 배포 충돌</b></span></div>
+          <div class="row reveal"><span class="n">!</span><span class="t">장애 전파</span><span class="d">알림 모듈 메모리 누수 → <b>주문·결제까지 전체 다운</b></span></div>
+          <div class="row reveal"><span class="n">!</span><span class="t">스케일링 비효율</span><span class="d">조회만 폭증해도 <b>전체 인스턴스를 동일하게 복제</b></span></div>
+        </div>
+        <div class="sub reveal">한 모듈의 문제가 <span class="hl">중요도와 무관하게 전체로 퍼진다.</span></div>
+      </div>
+    </section>
+
+    <!-- 4. Conway's Law -->
+    <section class="slide" data-sec="Conway's Law">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Conway's Law</h2><span class="idx">조직 = 아키텍처</span></div>
+        <div class="statement reveal" style="font-size:60px; line-height:1.32;">“시스템은 그것을 만든 <span class="em">조직의 커뮤니케이션 구조</span>를 닮는다.”</div>
+        <div class="sub reveal">MSA는 기술적 선택이 아니라 <span class="hl">조직적 선택</span>이다. 팀 5명이 도입하면 오버헤드만 늘고, 팀 30명이 서로의 코드를 밟을 때 비로소 고민할 문제다.</div>
+      </div>
+    </section>
+
+    <!-- 5. 도입 판단 기준 -->
+    <section class="slide" data-sec="도입 판단">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>나눠야 할 때 vs 아닐 때</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">MSA 적합</div><div class="a"><span class="k2">팀 20명+ · 명확한 도메인 경계 · 모듈별 트래픽 격차 큼 · 잦은 독립 배포</span></div></div>
+          <div class="cell reveal"><div class="q">Monolith 유지</div><div class="a">팀 10명 이하 · 도메인 탐색 중 · 균일한 트래픽 · 전체 배포로 충분</div></div>
+        </div>
+        <div class="callout reveal" style="margin-top:38px;">
+          <span class="ico">⛔</span>
+          <div class="body">스타트업 초기·작은 팀·불명확한 경계에서는 <b>하지 마라</b><span class="dim">잘못 그은 서비스 경계는 Monolith보다 고치기 훨씬 어렵다.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. Modular Monolith 먼저 -->
+    <section class="slide" data-sec="현실적 중간 단계">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>먼저 Modular Monolith</h2></div>
+        <div class="statement reveal" style="font-size:64px; line-height:1.28;">내부 <span class="em">모듈 경계</span>부터 깔끔히,<br />필요할 때 <span class="em">서비스로 분리.</span></div>
+        <div class="sub reveal">모듈 간 직접 의존 금지 — <span class="hl">Facade·이벤트로만 통신</span>하고, ArchUnit으로 경계를 테스트에서 강제한다. 실무에서 가장 현실적인 전략.</div>
+      </div>
+    </section>
+
+    <!-- 7. 설계 원칙 한눈에 -->
+    <section class="slide" data-sec="설계 원칙">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>설계 원칙 4가지</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">단일 비즈니스 능력</span><span class="d">기능(CRUD)이 아니라 <b>도메인(주문/결제/배송)</b> 단위로</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">Database per Service</span><span class="d">DB를 나눠 <b>결합도·SPOF 제거</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">Bounded Context</span><span class="d">같은 용어가 다른 의미를 갖는 <b>경계</b>로 서비스 분리</span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">API First</span><span class="d">구현 전 <b>계약(OpenAPI)</b>부터 → 팀 병렬 개발</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. Bounded Context -->
+    <section class="slide" data-sec="Bounded Context">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Bounded Context로 경계 잡기</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">상품 Context</div><div class="a">Product = 이름·설명·카테고리·재고</div></div>
+          <div class="cell reveal"><div class="q">주문 Context</div><div class="a">Product = 주문항목·수량·가격</div></div>
+          <div class="cell reveal"><div class="q">결제 Context</div><div class="a">Product = 결제금액·환불정책</div></div>
+          <div class="cell reveal"><div class="q">배송 Context</div><div class="a">Product = 무게·크기·배송지</div></div>
+        </div>
+        <div class="sub reveal">같은 <span class="hl">"Product"</span>가 Context마다 다른 의미·속성을 가진다 → 각 Context가 하나의 서비스.</div>
+      </div>
+    </section>
+
+    <!-- 9. Database per Service -->
+    <section class="slide" data-sec="Database per Service">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Database per Service</h2><span class="idx">결합도 제거</span></div>
+        <div class="callout tip reveal">
+          <span class="ico">✅</span>
+          <div class="body">스키마 변경이 <b>해당 서비스에만</b> 영향 · 서비스별 최적 DB 엔진 · 독립 스케일링<span class="dim">공유 DB는 결합도 폭발 + SPOF + DB 병목으로 독립성이 무너진다.</span></div>
+        </div>
+        <div class="callout reveal" style="margin-top:34px;">
+          <span class="ico">⚖️</span>
+          <div class="body">대가: 서비스 간 <b>JOIN 불가 · 분산 트랜잭션</b><span class="dim">→ API Composition / CQRS로 조회, Saga로 트랜잭션 해결.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. 통신 방식: 동기 vs 비동기 -->
+    <section class="slide" data-sec="서비스 간 통신">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>동기 vs 비동기</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">동기 (REST · gRPC)</div><div class="a"><span class="k2">즉시 응답이 필요할 때</span> — 주문 → 결제. 호출자가 응답을 기다림.</div></div>
+          <div class="cell reveal"><div class="q">비동기 (Kafka)</div><div class="a"><span class="k2">나중에 처리해도 될 때</span> — 주문 완료 → 알림·재고·포인트(Fan-out).</div></div>
+        </div>
+        <div class="sub reveal">실무는 둘을 <span class="hl">혼합</span>한다. 동기 호출엔 반드시 <span class="hl">Timeout + Circuit Breaker</span>로 장애 전파를 막는다.</div>
+      </div>
+    </section>
+
+    <!-- 11. REST vs gRPC -->
+    <section class="slide" data-sec="REST vs gRPC">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>REST vs gRPC</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">REST (JSON/HTTP)</div><div class="a"><span class="k2">외부·클라이언트 대면</span> — curl로 바로 테스트, 브라우저 완벽 지원, 느슨한 계약.</div></div>
+          <div class="cell reveal"><div class="q">gRPC (Protobuf/HTTP2)</div><div class="a"><span class="k2">서비스 간 내부 통신</span> — 바이너리 직렬화로 더 빠름, 양방향 스트리밍, 엄격한 타입 계약.</div></div>
+        </div>
+        <div class="sub reveal">정답은 상황에 따라 — 외부 API는 <span class="hl">REST</span>, 고빈도 내부 통신·실시간엔 <span class="hl">gRPC</span>.</div>
+      </div>
+    </section>
+
+    <!-- 12. API Gateway -->
+    <section class="slide" data-sec="API Gateway">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>API Gateway</h2><span class="idx">단일 진입점</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>GatewayConfig.java — Spring Cloud Gateway</div>
+<pre>builder.<span class="fn">routes</span>()
+  .<span class="fn">route</span>(<span class="s">"order-service"</span>, r -&gt; r
+    .<span class="fn">path</span>(<span class="s">"/api/v1/orders/**"</span>)
+    .<span class="fn">filters</span>(f -&gt; f
+      .<span class="fn">circuitBreaker</span>(c -&gt; c.<span class="fn">setName</span>(<span class="s">"orderCb"</span>))
+      .<span class="fn">retry</span>(rc -&gt; rc.<span class="fn">setRetries</span>(<span class="nu">3</span>)))
+    .<span class="fn">uri</span>(<span class="s">"lb://order-service"</span>))</pre>
+        </div>
+        <div class="sub reveal">라우팅·인증/인가·Rate Limiting·로드밸런싱·<span class="hl">Correlation ID</span>를 한 곳에서 처리.</div>
+      </div>
+    </section>
+
+    <!-- 13. Service Discovery -->
+    <section class="slide" data-sec="Service Discovery">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Service Discovery</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">Client-Side (Eureka)</div><div class="a">인스턴스 목록을 받아 <span class="k2">클라이언트가 직접 로드밸런싱</span>.</div></div>
+          <div class="cell reveal"><div class="q">Server-Side (K8s Service)</div><div class="a"><span class="k2">"payment-service:8080"</span>만 알면 K8s DNS가 해결.</div></div>
+        </div>
+        <div class="callout reveal" style="margin-top:38px;">
+          <span class="ico">💡</span>
+          <div class="body">Kubernetes를 쓰면 <b>Eureka가 필요 없다</b><span class="dim">K8s Service + CoreDNS가 대체 — Spring Cloud Netflix 스택은 레거시화되는 추세.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14. Circuit Breaker 상태 전이 -->
+    <section class="slide" data-sec="Circuit Breaker">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Circuit Breaker 상태 전이</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">●</span><span class="t">CLOSED (정상)</span><span class="d">모든 요청 통과 · <b>실패율 &gt; 임계값이면 → OPEN</b></span></div>
+          <div class="row reveal"><span class="n">●</span><span class="t">OPEN (차단)</span><span class="d">즉시 fallback 반환 · <b>대기 시간 경과 후 → HALF_OPEN</b></span></div>
+          <div class="row reveal"><span class="n">●</span><span class="t">HALF_OPEN (시험)</span><span class="d">일부만 통과 · <b>성공 → CLOSED, 실패 → OPEN</b></span></div>
+        </div>
+        <div class="sub reveal">없으면 결제 서비스 다운 시 <span class="hl">스레드 풀 고갈 → 연쇄 장애.</span></div>
+      </div>
+    </section>
+
+    <!-- 15. MSA의 고통 -->
+    <section class="slide" data-sec="고통과 트레이드오프">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>나눈 뒤의 대가</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">⚠</span><span class="t">분산 트랜잭션</span><span class="d">ACID 불가 → <b>Saga Pattern</b> · 복잡도 매우 높음</span></div>
+          <div class="row reveal"><span class="n">⚠</span><span class="t">데이터 조인 불가</span><span class="d">서비스 간 JOIN 안 됨 → <b>CQRS · API Composition</b></span></div>
+          <div class="row reveal"><span class="n">⚠</span><span class="t">데이터 일관성</span><span class="d">Eventually Consistent → <b>보상 트랜잭션</b></span></div>
+          <div class="row reveal"><span class="n">⚠</span><span class="t">추적·디버깅</span><span class="d">어디서 났는지 → <b>Distributed Tracing</b></span></div>
+        </div>
+        <div class="sub reveal">비용은 나누는 것이 아니라 <span class="hl">나눈 뒤의 분산 복잡성을 관리하는 것.</span></div>
+      </div>
+    </section>
+
+    <!-- 16. Strangler Fig 전환 -->
+    <section class="slide" data-sec="전환 전략">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Strangler Fig Pattern</h2><span class="idx">점진적 전환</span></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">1</span><span class="t">Proxy 도입</span><span class="d">Gateway를 앞단에 — <b>100% Monolith</b>로 시작</span></div>
+          <div class="row reveal"><span class="n">2</span><span class="t">독립적인 것부터</span><span class="d">알림 등 <b>의존성·임팩트 낮은 모듈</b> 먼저 분리</span></div>
+          <div class="row reveal"><span class="n">3</span><span class="t">점진적 분리</span><span class="d">Monolith가 점점 작아지도록 <b>한 조각씩</b></span></div>
+        </div>
+        <div class="callout reveal" style="margin-top:34px;">
+          <span class="ico">🔥</span>
+          <div class="body">빅뱅 전환은 <b>롤백 불가 도박</b> — 이중 비용·숨은 버그·개발 중단<span class="dim">한 조각씩 감싸 대체하는 Strangler Fig가 가장 안전하다.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 17. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.42;">
+          “MSA는 <span class="em">조직의 독립성·확장성</span>이라는 문제를 푸는 수단이지<br />
+          그 자체가 목적이 아닙니다. 작은 팀·불명확한 경계라면<br />
+          <span class="em">Modular Monolith</span>로 시작해 <span class="em">Strangler Fig</span>로 점진 전환합니다.”
+        </div>
+        <div class="sub reveal">경계는 <span class="hl">Bounded Context</span>, DB는 <span class="hl">서비스별 분리</span>, 통신은 <span class="hl">동기·비동기 혼합 + Circuit Breaker.</span></div>
+      </div>
+    </section>
+
+    <!-- 18. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../architecture/MSA-구조와-필요성">MSA 구조와 필요성.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../architecture/MSA-분산-트랜잭션">MSA 분산 트랜잭션</a> · <a href="../../architecture/벌크헤드-패턴">벌크헤드 패턴</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

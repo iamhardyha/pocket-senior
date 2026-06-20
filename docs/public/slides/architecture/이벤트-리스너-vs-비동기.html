@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>이벤트 리스너 vs 비동기 — Pocket Senior 슬라이드</title>
+<meta name="description" content="비동기, @Async, Spring Event, @TransactionalEventListener, AFTER_COMMIT, Outbox, Kafka — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">이벤트-리스너-vs-비동기</span>.md</span></div>
+      <div class="ide-path">architecture — UTF-8 · LF</div>
+      <a class="tab-back" href="../../architecture/이벤트-리스너-vs-비동기">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">15</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category architecture · 발행-구독 vs 별도 스레드</div>
+        <h1 class="reveal"><span class="hash"># </span>이벤트 리스너<br /><span class="np">vs</span> 비동기<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"이벤트 리스너를 쓰는 이유 · 비동기를 쓰는 이유 · 둘의 차이"</span><span class="op">;</span><br />
+          <span class="op">// 그냥 비동기로 처리해도 되지 않을까?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">이벤트는 <span class="em-r">설계</span>,<br />비동기는 <span class="em">실행</span>의 문제다.</div>
+        <div class="sub reveal">이벤트 = <span class="hl">누가 처리할지 모르게</span> 알리기 · 비동기 = <span class="hl">빨리 끝내려고</span> 따로 실행하기.</div>
+      </div>
+    </section>
+
+    <!-- 3. 두 축은 직교한다 -->
+    <section class="slide" data-sec="핵심 관점">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>질문이 다르다</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">비동기 (@Async)</div><div class="a">"이 작업을 <span class="k2">별도 스레드</span>에서 해줘"<br />→ <span class="k2">실행 방식</span>의 문제</div></div>
+          <div class="cell reveal"><div class="q">이벤트 리스너</div><div class="a">"이런 일이 <span class="k2">일어났어</span>"<br />→ <span class="k2">설계 구조</span>의 문제</div></div>
+        </div>
+        <div class="sub reveal">두 축은 직교한다 — 섞어서도, 따로도 쓴다.</div>
+      </div>
+    </section>
+
+    <!-- 4. 비동기 — 직접 호출 -->
+    <section class="slide" data-sec="@Async">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>비동기 — 별도 스레드에서</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>NotificationService.java</div>
+<pre><span class="an">@Async</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">sendOrderConfirmation</span>(<span class="ty">Order</span> order) {
+    <span class="c">// 별도 스레드 → 주문 응답은 이미 반환됨</span>
+    emailClient.<span class="fn">send</span>(order.<span class="fn">getUserEmail</span>(), <span class="s">"주문 확인"</span>);
+}</pre>
+        </div>
+        <div class="sub reveal">호출자가 <span class="hl">대상을 직접 호출</span>한다 — 응답 시간에서만 제외할 뿐, 결합은 그대로다.</div>
+      </div>
+    </section>
+
+    <!-- 5. 비동기의 한계 — OCP 위반 -->
+    <section class="slide" data-sec="@Async · 한계">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>비동기만으로는 — OCP 위반</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>요구사항 추가될 때마다 주문 서비스가 비대해진다</div>
+<pre><span class="k">public</span> <span class="k">void</span> <span class="fn">createOrder</span>(<span class="ty">OrderRequest</span> req) {
+    orderRepository.<span class="fn">save</span>(...);
+    notificationService.<span class="fn">sendOrderConfirmation</span>(order); <span class="c">// +알림</span>
+    pointService.<span class="fn">earnPoints</span>(order);                  <span class="c">// +포인트</span>
+    analyticsService.<span class="fn">trackOrder</span>(order);              <span class="c">// +분석</span>
+    <span class="c">// 주문이 모든 것을 알아야 한다 → OCP 위반</span>
+}</pre>
+        </div>
+        <div class="sub reveal">처리 대상이 늘 때마다 <span class="hl">주문 서비스 코드를 수정</span>해야 한다.</div>
+      </div>
+    </section>
+
+    <!-- 6. 이벤트 리스너 — 발행 -->
+    <section class="slide" data-sec="이벤트 리스너">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>이벤트 — 사실만 발행</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderService.java</div>
+<pre><span class="an">@Transactional</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">createOrder</span>(<span class="ty">OrderRequest</span> req) {
+    <span class="ty">Order</span> order = orderRepository.<span class="fn">save</span>(...);
+    <span class="c">// "주문이 생성됐다"는 사실만 알림</span>
+    eventPublisher.<span class="fn">publishEvent</span>(<span class="k">new</span> <span class="ty">OrderCreatedEvent</span>(order));
+    <span class="c">// 누가 듣는지 주문 서비스는 모른다</span>
+}</pre>
+        </div>
+        <div class="sub reveal"><span class="hl">ApplicationEventPublisher</span>로 발행 — 발행자는 구독자를 모른다 (Pub-Sub).</div>
+      </div>
+    </section>
+
+    <!-- 7. 이벤트 리스너 — 구독 -->
+    <section class="slide" data-sec="이벤트 리스너">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>리스너만 추가하면 끝</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>독립 리스너들 — 주문 서비스 코드 변경 없음</div>
+<pre><span class="an">@EventListener</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">onNotify</span>(<span class="ty">OrderCreatedEvent</span> e) { <span class="c">/* 알림 */</span> }
+
+<span class="an">@EventListener</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">onPoint</span>(<span class="ty">OrderCreatedEvent</span> e) { <span class="c">/* 포인트 */</span> }
+
+<span class="an">@EventListener</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">onTrack</span>(<span class="ty">OrderCreatedEvent</span> e) { <span class="c">/* 분석 */</span> }</pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">✅</span>
+          <div class="body">새 기능은 <b>리스너만 추가</b> — 주문 서비스를 안 건드린다 <span class="dim">개방-폐쇄 원칙(OCP)을 코드로 지킨다.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. 트랜잭션 경계 — 핵심 -->
+    <section class="slide" data-sec="트랜잭션 경계">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>기본 @EventListener의 함정</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>기본 @EventListener — 같은 스레드 · 같은 트랜잭션</div>
+<pre><span class="an">@EventListener</span>
+<span class="k">public</span> <span class="k">void</span> <span class="fn">handle</span>(<span class="ty">OrderCreatedEvent</span> e) {
+    <span class="c">// 주문 트랜잭션 안에서 동기로 실행된다</span>
+    <span class="c">// 여기서 예외 발생 → 주문도 함께 롤백!</span>
+}</pre>
+        </div>
+        <div class="sub reveal">동기 · 동일 트랜잭션 · 동일 스레드가 <span class="hl">기본값</span>. 리스너 실패가 원본까지 끌고 내려간다.</div>
+      </div>
+    </section>
+
+    <!-- 9. @TransactionalEventListener phase -->
+    <section class="slide" data-sec="트랜잭션 경계">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>커밋 후로 미루기</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>@TransactionalEventListener — phase로 실행 시점 지정</div>
+<pre><span class="an">@TransactionalEventListener</span>(phase = <span class="ty">TransactionPhase</span>.<span class="g">AFTER_COMMIT</span>)
+<span class="k">public</span> <span class="k">void</span> <span class="fn">handle</span>(<span class="ty">OrderCreatedEvent</span> e) {
+    <span class="c">// 주문 트랜잭션 커밋 후 실행</span>
+    <span class="c">// 여기서 예외 → 주문은 이미 커밋됨 (안전)</span>
+    notificationClient.<span class="fn">send</span>(e.<span class="fn">getOrder</span>());
+}</pre>
+        </div>
+        <div class="sub reveal">phase: <span class="hl">AFTER_COMMIT</span>(성공 후) · <span class="hl">AFTER_ROLLBACK</span>(실패 후). 원본 트랜잭션과 분리된다.</div>
+      </div>
+    </section>
+
+    <!-- 10. 황금 조합 @Async + AFTER_COMMIT -->
+    <section class="slide" data-sec="실무 조합">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>실무 황금 조합</h2><span class="idx">안전 + 빠름</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>@Async + @TransactionalEventListener(AFTER_COMMIT)</div>
+<pre><span class="an">@Async</span>
+<span class="an">@TransactionalEventListener</span>(phase = <span class="ty">TransactionPhase</span>.<span class="g">AFTER_COMMIT</span>)
+<span class="k">public</span> <span class="k">void</span> <span class="fn">handle</span>(<span class="ty">OrderCreatedEvent</span> e) {
+    <span class="c">// 1. 커밋 후  2. 별도 스레드  3. 응답과 무관</span>
+}</pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">⭐</span>
+          <div class="body">커밋 후 · 별도 스레드 — <b>안전하고 성능도 좋은 기본기</b> <span class="dim">실무에서 가장 많이 쓰는 조합.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. AFTER_COMMIT의 유실 위험 -->
+    <section class="slide" data-sec="내구성">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>커밋 후 죽으면? — 유실</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            DB는 커밋됐는데 <b>핸들러/프로세스가 죽으면</b> 비동기 side-effect가 그대로 사라진다
+            <span class="dim">인프로세스 이벤트는 영속성·재시도가 없다 → 알림 안 감, 포인트 누락. 아무도 모른다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 중요하거나 서비스 간 전파가 필요하면 <span class="hl">Outbox 패턴</span>(내구성 보장)으로.</div>
+      </div>
+    </section>
+
+    <!-- 12. Spring Event vs Kafka -->
+    <section class="slide" data-sec="Spring vs Kafka">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Spring Event vs Kafka</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">Spring ApplicationEvent</div><div class="a"><span class="k2">단일 JVM</span> · 비영속(메모리)<br />장애 시 유실 · 재시도 직접 구현</div></div>
+          <div class="cell reveal"><div class="q">Kafka Event</div><div class="a"><span class="k2">서비스 간 분산</span> · 영속(디스크)<br />메시지 보존 · <span class="k2">offset</span>으로 자동 재시도</div></div>
+        </div>
+        <div class="sub reveal">모놀리스 내 도메인 분리는 <span class="hl">Spring Event</span>, MSA 간 통신은 <span class="hl">Kafka</span>. 잘 써두면 MSA 전환이 쉽다.</div>
+      </div>
+    </section>
+
+    <!-- 13. 판단 기준 -->
+    <section class="slide" data-sec="판단 기준">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>판단 기준</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">처리 대상이 늘어날 수 있나?</div><div class="a">YES → <span class="k2">이벤트</span> · NO → <span class="k2">@Async</span>로 충분</div></div>
+          <div class="cell reveal"><div class="q">원래 트랜잭션과 독립이어야?</div><div class="a">YES → <span class="k2">@TransactionalEventListener</span></div></div>
+          <div class="cell reveal"><div class="q">응답 시간에서 제외해야?</div><div class="a">YES → <span class="k2">@Async</span> 추가</div></div>
+          <div class="cell reveal"><div class="q">유실되면 안 되는 일?</div><div class="a">YES → <span class="k2">Outbox</span> · 서비스 간이면 Kafka</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:52px; line-height:1.45;">
+          “비동기는 <span class="em">빠르게 응답</span>하려고 별도 스레드,<br />
+          이벤트는 <span class="em">의존성을 끊으려고</span> 발행-구독.<br />
+          확장 가능성이 있으면 <span class="em">이벤트</span>를 씁니다.”
+        </div>
+        <div class="sub reveal">실무 조합: <span class="hl">@Async + @TransactionalEventListener(AFTER_COMMIT)</span>. 단, 유실되면 안 되면 <span class="hl">Outbox</span>.</div>
+      </div>
+    </section>
+
+    <!-- 15. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../architecture/이벤트-리스너-vs-비동기">이벤트 리스너 vs 비동기.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../architecture/Kafka">Kafka</a> · <a href="../../architecture/메시지큐-아키텍처">메시지큐 아키텍처</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

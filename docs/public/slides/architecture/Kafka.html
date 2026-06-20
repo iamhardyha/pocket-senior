@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kafka — Pocket Senior 슬라이드</title>
+<meta name="description" content="Kafka, 파티션, Consumer Group, offset, acks, DLT, 멱등성 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">Kafka</span>.md</span></div>
+      <div class="ide-path">architecture — UTF-8 · LF</div>
+      <a class="tab-back" href="../../architecture/Kafka">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">16</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category architecture · 분산 이벤트 스트리밍</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">Kafka</span><span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"Kafka는 무엇이고, 어떻게 동작하며, 어떻게 쓰는가?"</span><span class="op">;</span><br />
+          <span class="op">// 보내고 잊는 게 아니라, 기록하고 읽는 구조</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal">Kafka는 <span class="em">분산 이벤트 스트리밍</span> 플랫폼.</div>
+        <div class="sub reveal">메시지를 <span class="hl">'보내고 잊는'</span> 게 아니라 <span class="hl">'기록하고 읽는'</span> 구조다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 구성 요소 -->
+    <section class="slide" data-sec="구성 요소">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>핵심 구성 요소</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">P</span><span class="t">Producer / Topic</span><span class="d">메시지를 <b>Topic</b>(논리 카테고리)에 발행</span></div>
+          <div class="row reveal"><span class="n">▦</span><span class="t">Partition</span><span class="d">Topic의 물리 분할 · <b>순서 보장의 단위</b></span></div>
+          <div class="row reveal"><span class="n">C</span><span class="t">Consumer Group</span><span class="d">파티션을 그룹 내 Consumer에 <b>분배</b></span></div>
+          <div class="row reveal"><span class="n">↳</span><span class="t">Offset</span><span class="d">각 Consumer가 <b>어디까지 읽었는지</b> 기록</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. 파티션과 순서 보장 -->
+    <section class="slide" data-sec="파티션 순서">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>파티션과 순서 보장</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>Topic: order-events</div>
+<pre>Partition 0: [msg1, msg4, msg7, …]  <span class="c">← Consumer A</span>
+Partition 1: [msg2, msg5, msg8, …]  <span class="c">← Consumer B</span>
+Partition 2: [msg3, msg6, msg9, …]  <span class="c">← Consumer C</span></pre>
+        </div>
+        <div class="sub reveal"><span class="hl">파티션 내부</span>에서만 순서 보장 · <span class="hl">파티션 간</span>에는 순서 보장 안 됨.</div>
+      </div>
+    </section>
+
+    <!-- 5. 메시지 키와 파티셔닝 (murmur2) -->
+    <section class="slide" data-sec="키 해시 murmur2">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>메시지 키 → 같은 파티션</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>KafkaProducer.java</div>
+<pre>kafkaTemplate.<span class="fn">send</span>(<span class="s">"order-events"</span>, userId.<span class="fn">toString</span>(), event);
+<span class="c">//                              ^^^^^^ key</span></pre>
+        </div>
+        <div class="sub reveal">같은 key → 항상 같은 파티션(<span class="hl">murmur2 해시</span>로 결정). 키 값과 파티션 번호가 일치하는 건 아니다. <span class="hl">같은 사용자 이벤트는 순서 보장.</span></div>
+      </div>
+    </section>
+
+    <!-- 6. 파티션 = 병렬성 -->
+    <section class="slide" data-sec="병렬 처리">
+      <div class="buf" style="align-items:flex-start;">
+        <div class="formula reveal">파티션 수 <b>=</b> 최대 병렬 Consumer 수</div>
+        <div class="bignum reveal">3<span style="font-size:96px; color:var(--fg-dim); font-weight:700;"> 파티션</span></div>
+        <div class="sub reveal">Consumer <span class="hl">3개면 1:1 최적</span> · 5개면 2개는 논다 · 1개면 혼자 다 처리(느림).</div>
+      </div>
+    </section>
+
+    <!-- 7. Consumer Group / 리밸런스 -->
+    <section class="slide" data-sec="Consumer Group">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>Consumer Group · 리밸런스</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>group: order-processor</div>
+<pre>Consumer A ← Partition 0
+Consumer B ← Partition 1
+Consumer C ← Partition 2
+
+<span class="c">// Consumer가 추가/이탈하면 파티션 재배분(리밸런스)</span></pre>
+        </div>
+        <div class="sub reveal">그룹에 Consumer가 들고 나면 파티션을 <span class="hl">자동 재할당</span>한다. 스케일 아웃의 단위는 곧 <span class="hl">파티션 수</span>.</div>
+      </div>
+    </section>
+
+    <!-- 8. offset 수동 커밋 -->
+    <section class="slide" data-sec="수동 커밋">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>offset 수동 커밋</h2><span class="idx">유실 방지</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>OrderConsumer.java</div>
+<pre><span class="an">@KafkaListener</span>(topics = <span class="s">"order-events"</span>)
+<span class="k">public void</span> <span class="fn">consume</span>(<span class="ty">OrderEvent</span> e, <span class="ty">Acknowledgment</span> ack) {
+    orderService.<span class="fn">process</span>(e);   <span class="c">// 처리</span>
+    ack.<span class="fn">acknowledge</span>();        <span class="c">// 완료 후에만 커밋</span>
+}</pre>
+        </div>
+        <div class="sub reveal"><span class="hl">enable-auto-commit: false</span> · 실패하면 커밋 안 함 → 다음 poll에서 재처리.</div>
+      </div>
+    </section>
+
+    <!-- 9. 재처리 → 멱등성 -->
+    <section class="slide" data-sec="멱등성">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>재처리의 전제 — 멱등성</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            수동 커밋은 <b>"최소 한 번(at-least-once)"</b> — 같은 메시지가 다시 올 수 있다
+            <span class="dim">실패한 메시지는 재전달된다. Consumer가 멱등하지 않으면 중복 처리·중복 결제로 이어진다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 해결: <span class="hl">eventId 같은 멱등성 키</span>로 중복을 걸러낸다.</div>
+      </div>
+    </section>
+
+    <!-- 10. acks 비교 -->
+    <section class="slide" data-sec="acks 비교">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>acks — 유실 vs 성능</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">0</span><span class="t">응답 안 기다림</span><span class="d">최고 성능 · <b>유실 가능</b></span></div>
+          <div class="row reveal"><span class="n">1</span><span class="t">Leader만 확인</span><span class="d">균형 · <b>Leader 장애 시 유실</b></span></div>
+          <div class="row reveal"><span class="n">all</span><span class="t">모든 ISR 확인</span><span class="d">느림 · <b>유실 없음 (권장)</b></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. acks=all + min.insync.replicas -->
+    <section class="slide" data-sec="acks=all + ISR">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>acks=all 의 짝꿍</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>application.yml</div>
+<pre><span class="c"># Producer: 모든 ISR 확인 후 응답 → 유실 방지</span>
+acks: all
+<span class="c"># Broker/Topic: 최소 몇 개의 동기 복제본이 살아있어야 쓰기 허용</span>
+min.insync.replicas: <span class="nu">2</span></pre>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">⭐</span>
+          <div class="body"><b>acks=all 단독으로는 부족</b> — <b>min.insync.replicas≥2</b>가 함께 있어야 복제본 1개로 줄었을 때 쓰기를 막아 유실을 진짜로 차단한다</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. 재시도 / FixedBackOff -->
+    <section class="slide" data-sec="재시도 DLT">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>재시도 → Dead Letter Topic</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>ErrorHandler 설정</div>
+<pre><span class="k">new</span> <span class="ty">DefaultErrorHandler</span>(
+    recoverer,                       <span class="c">// 실패 시 DLT로 발행</span>
+    <span class="k">new</span> <span class="ty">FixedBackOff</span>(<span class="nu">1000L</span>, <span class="nu">3</span>)  <span class="c">// 1초 간격, 재시도 3회</span>
+);</pre>
+        </div>
+        <div class="sub reveal">최초 1회 <span style="color:var(--red)">+</span> 재시도 3회 = <span class="hl">총 4회 시도</span> 후 실패 → <span class="hl">order-events.DLT</span>로 격리.</div>
+      </div>
+    </section>
+
+    <!-- 13. Consumer Lag -->
+    <section class="slide" data-sec="Lag 모니터링">
+      <div class="buf" style="align-items:flex-start;">
+        <div class="formula reveal">쓴 offset <b>1,000,000</b> <span style="color:var(--red)">−</span> 읽은 offset <b>950,000</b> =</div>
+        <div class="bignum reveal">50,000<span style="font-size:96px; color:var(--fg-dim); font-weight:700;"> Lag</span></div>
+        <div class="sub reveal">Lag이 계속 증가 → 처리 속도 &lt; 유입 속도. <span class="hl">Consumer 추가</span> 또는 로직 최적화. (Burrow · Lag Exporter)</div>
+      </div>
+    </section>
+
+    <!-- 14. exactly-once vs at-least-once -->
+    <section class="slide" data-sec="전달 보장">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>전달 보장, 어디까지?</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">기본 (수동 커밋)</div><div class="a"><span class="k2">at-least-once</span> — 멱등성으로 중복 흡수</div></div>
+          <div class="cell reveal"><div class="q">트랜잭션 + read_committed</div><div class="a"><span class="k2">exactly-once</span> — Kafka 내부 한정·비용 큼</div></div>
+          <div class="cell reveal"><div class="q">현실적인 선택</div><div class="a"><span class="k2">at-least-once + 멱등 Consumer</span></div></div>
+          <div class="cell reveal"><div class="q">외부 DB까지 정확히?</div><div class="a"><span class="k2">Outbox 패턴</span>으로 보완</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.45;">
+          “Kafka는 <span class="em">메시지를 보관</span>하는 스트리밍 플랫폼.<br />
+          <span class="em">파티션</span>으로 순서·병렬을 잡고,<br />
+          <span class="em">acks=all + 수동 커밋 + 멱등성</span>으로 유실·중복을 막는다.”
+        </div>
+        <div class="sub reveal">실패는 <span class="hl">DLT로 격리</span>하고 <span class="hl">Consumer Lag</span>을 모니터링한다.</div>
+      </div>
+    </section>
+
+    <!-- 16. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../architecture/Kafka">Kafka.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../architecture/메시지큐-아키텍처">메시지큐 아키텍처</a> · <a href="../../architecture/이벤트-리스너-vs-비동기">이벤트 리스너 vs 비동기</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>

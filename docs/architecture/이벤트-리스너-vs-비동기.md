@@ -3,6 +3,7 @@ tags: [비동기, Spring, 이벤트, 아키텍처, 메시지큐]
 question: "이벤트 리스너 vs 비동기 - 사용 이유와 차이"
 status: 🟢
 order: 5
+slides: true
 ---
 
 # 이벤트 리스너 vs 비동기

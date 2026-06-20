@@ -3,6 +3,7 @@ tags: [Kafka, 메시지큐, 비동기, 분산처리, 스트리밍]
 question: "Kafka"
 status: 🟢
 order: 4
+slides: true
 ---
 
 # Kafka

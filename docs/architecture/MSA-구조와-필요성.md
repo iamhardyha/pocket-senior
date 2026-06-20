@@ -3,6 +3,7 @@ tags: [MSA, 분산처리, Spring, 아키텍처, 스케일링]
 question: "MSA 구조와 필요성 — 왜 필요하고, 어떻게 설계하는가?"
 status: 🟢
 order: 1
+slides: true
 ---
 
 # MSA 구조와 필요성
