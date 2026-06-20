@@ -146,6 +146,11 @@ body::before {
 
 /* Tables */
 .vp-doc table {
+  /* 기본 display:block 은 컨테이너 폭만큼 박스를 그리되 셀은 내용폭이라
+     오른쪽이 비는 문제가 생긴다 → 실제 테이블로 폭 100% 채우기 */
+  display: table;
+  width: 100%;
+  table-layout: auto;
   border-radius: var(--ps-radius-md);
   overflow: hidden;
   box-shadow: none;
