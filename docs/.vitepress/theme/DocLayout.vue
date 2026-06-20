@@ -2,6 +2,7 @@
 import DefaultTheme from 'vitepress/theme'
 import IssueFooter from './IssueFooter.vue'
 import MetaBar from './MetaBar.vue'
+import VisitorCount from './VisitorCount.vue'
 import { useData } from 'vitepress'
 
 const { frontmatter } = useData()
@@ -14,6 +15,9 @@ const { frontmatter } = useData()
     </template>
     <template #doc-after>
       <IssueFooter v-if="frontmatter.layout !== 'page' && frontmatter.layout !== 'home'" />
+    </template>
+    <template #layout-bottom>
+      <VisitorCount />
     </template>
   </DefaultTheme.Layout>
 </template>
