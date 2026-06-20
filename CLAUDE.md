@@ -33,18 +33,23 @@ URL: https://iamhardyha.github.io/pocket-senior/
 ## Project Structure
 
 ```
-docs/                    <- Obsidian vault + VitePress source
+docs/                       <- Obsidian vault + VitePress source
 ├── .vitepress/
-│   ├── config.ts        <- VitePress 설정
-│   └── theme/           <- 커스텀 다크 퍼플 테마
-├── traffic/             <- 트래픽 & 장애 대응
-├── concurrency/         <- 데이터 정합성 & 동시성
-├── failure/             <- 장애 시나리오
-├── database/            <- 데이터베이스
-├── architecture/        <- 아키텍처 & 비동기
-├── infra/               <- 인프라 & 마이그레이션
-├── 00-질문목록.md        <- 전체 질문 목록
-└── index.md             <- 랜딩 페이지
+│   ├── config.ts           <- VitePress 설정 (nav · head · GoatCounter)
+│   ├── data/notes.data.ts  <- 노트 메타 로더 (slides 필드 포함)
+│   └── theme/              <- 커스텀 라벤더 Editorial 테마
+│       ├── tokens.css · style.css          <- 디자인 토큰 · 전역 스타일
+│       ├── HomePage · QuestionList · TagCloud · SlidesGallery (.vue)
+│       ├── DocLayout · MetaBar · IssueFooter · VisitorCount (.vue)
+│       └── categories.ts
+├── traffic/ concurrency/ failure/ database/ architecture/ infra/   <- 카테고리 노트
+├── public/slides/<category>/<note>.html    <- 수제작 슬라이드 덱
+├── 00-질문목록.md · index.md · slides.md · changelog.md · tags.md
+└── superpowers/            <- 스펙/스크래치 (VitePress 빌드 제외)
+
+.claude/                    <- 노트 제작 하네스 (Question Mode Workflow 실행)
+├── agents/                 <- note-author · domain-verifier · slide-deck-builder
+└── skills/                 <- note-pipeline(오케스트레이터) + note-authoring · domain-verification · slide-deck-build
 ```
 
 ## Note Conventions
@@ -57,3 +62,4 @@ docs/                    <- Obsidian vault + VitePress source
   - `question`: 질문목록에 표시될 질문 텍스트
   - `status`: 🔴 미학습, 🟡 학습중, 🟢 완료
   - `order`: 카테고리 내 정렬 순서 (정수)
+  - `slides`: `true`면 '▶ 슬라이드로 보기' 토글 + `/slides` 갤러리에 노출 (슬라이드 덱 생성 후 slide-deck-builder가 추가 — 덱 없이 켜면 고아 토글)
