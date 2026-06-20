@@ -3,6 +3,7 @@ import HomePage from './HomePage.vue'
 import DocLayout from './DocLayout.vue'
 import TagCloud from './TagCloud.vue'
 import QuestionList from './QuestionList.vue'
+import SlidesGallery from './SlidesGallery.vue'
 import './tokens.css'
 import './style.css'
 
@@ -13,5 +14,6 @@ export default {
     app.component('HomePage', HomePage)
     app.component('TagCloud', TagCloud)
     app.component('QuestionList', QuestionList)
+    app.component('SlidesGallery', SlidesGallery)
   },
 }

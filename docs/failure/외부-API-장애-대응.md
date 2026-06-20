@@ -3,6 +3,7 @@ tags: [서킷브레이커, 장애복구, 타임아웃, 재시도, 페일오버]
 question: "외부 API 타임아웃 및 장애 대응"
 status: 🟢
 order: 6
+slides: true
 ---
 
 # 외부 API 타임아웃 및 장애 대응

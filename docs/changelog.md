@@ -12,6 +12,27 @@ layout: page
 
 <div class="changelog-entry">
 <div class="changelog-date">
+<span class="date-badge">2026-06-20</span>
+</div>
+<div class="changelog-content">
+<div class="changelog-section">
+<span class="changelog-tag tag-slides">슬라이드</span>
+<h3>‘슬라이드로 보기’ — 전체 35개 노트에 추가</h3>
+<p class="changelog-desc">출퇴근 암기용 <strong>슬라이드 덱</strong>을 6개 카테고리 35개 노트 전부에 추가했습니다. 각 글의 <strong>▶ 슬라이드로 보기</strong> 버튼으로 열거나, 홈·상단 메뉴의 <strong>슬라이드 갤러리</strong>에서 한눈에 둘러볼 수 있습니다. 한 슬라이드 한 개념(저밀도), 도메인 전문가 스팟검증 완료.</p>
+<div class="changelog-items">
+<a href="./slides.html" class="changelog-link">
+<span class="link-category">갤러리</span>
+<span class="link-title">슬라이드 갤러리 전체 보기</span>
+<span class="link-desc">35덱을 카테고리별 터미널 카드로 탐색 · 한 슬라이드 한 개념</span>
+<span class="link-arrow">→</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+
+<div class="changelog-entry">
+<div class="changelog-date">
 <span class="date-badge">2026-04-05</span>
 </div>
 <div class="changelog-content">

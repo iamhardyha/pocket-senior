@@ -13,6 +13,7 @@ const categories = computed(() =>
 )
 
 const totalNotes = computed(() => notes.length)
+const slidesCount = computed(() => notes.filter((n) => n.slides).length)
 </script>
 
 <template>
@@ -32,9 +33,18 @@ const totalNotes = computed(() => notes.length)
       <span class="meta-stats">{{ totalNotes }} NOTES · {{ categories.length }} CATEGORIES</span>
       <a href="/pocket-senior/changelog.html" class="meta-recent">
         <span class="recent-dot" />
-        최근 — DB 단편화·벌크헤드 패턴 추가
+        최근 — 슬라이드로 보기 추가
       </a>
     </div>
+
+    <!-- ── Slides entry point ── -->
+    <a href="/pocket-senior/slides" class="slides-cta">
+      <span class="cta-body">
+        <span class="cta-title">▶ 슬라이드로 보기</span>
+        <span class="cta-desc">출퇴근 암기용 · {{ slidesCount }}개 노트 한눈에</span>
+      </span>
+      <span class="cta-go">갤러리 →</span>
+    </a>
 
     <!-- ── Numbered index ── -->
     <nav class="index-list">
@@ -152,6 +162,60 @@ const totalNotes = computed(() => notes.length)
 @keyframes ps-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
+}
+
+/* ── Slides entry point (D) ── */
+.slides-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.05rem 1.35rem;
+  background: var(--ps-accent-soft);
+  border: 1px solid var(--ps-rule);
+  border-radius: var(--ps-radius-md);
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.slides-cta:hover {
+  background: color-mix(in srgb, var(--ps-accent-1) 18%, transparent);
+  border-color: var(--ps-accent-1);
+}
+
+.cta-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.cta-title {
+  font-family: var(--ps-font-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--ps-ink-1);
+  letter-spacing: -0.01em;
+}
+
+.cta-desc {
+  font-family: var(--ps-font-mono);
+  font-size: 0.72rem;
+  color: var(--ps-ink-3);
+}
+
+.cta-go {
+  font-family: var(--ps-font-mono);
+  font-size: 0.78rem;
+  color: var(--ps-accent-1);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.slides-cta:hover .cta-go {
+  transform: translateX(3px);
 }
 
 /* ── Numbered index ── */

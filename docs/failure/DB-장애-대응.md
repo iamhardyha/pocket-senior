@@ -3,6 +3,7 @@ tags: [MySQL, 장애복구, 레플리카, 페일오버, Aurora]
 question: "DB 장애 시 대응"
 status: 🟢
 order: 3
+slides: true
 ---
 
 # DB 장애 시 대응

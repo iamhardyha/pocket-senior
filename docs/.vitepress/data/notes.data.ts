@@ -10,6 +10,7 @@ export interface NoteData {
   readonly status: string
   readonly order: number
   readonly readingMinutes: number
+  readonly slides: boolean
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -71,6 +72,7 @@ export default createContentLoader('**/*.md', {
           status: (page.frontmatter.status as string) ?? '🔴',
           order: (page.frontmatter.order as number) ?? 99,
           readingMinutes: estimateReadingMinutes(src),
+          slides: page.frontmatter.slides === true,
         }
       })
       .sort((a, b) => {
