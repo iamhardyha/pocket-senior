@@ -172,6 +172,10 @@
     "collapsed": false,
     "items": [
       {
+        "text": "Firehose vs S3 직접 적재 — 결과가 같은데 왜 Kinesis를 쓰나",
+        "link": "/infra/Firehose-vs-S3-직접-적재"
+      },
+      {
         "text": "JDK 8 → JDK 21 마이그레이션",
         "link": "/infra/JDK-마이그레이션"
       },

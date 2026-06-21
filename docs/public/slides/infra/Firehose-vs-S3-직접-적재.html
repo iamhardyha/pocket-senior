@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Firehose vs S3 직접 적재 — Pocket Senior 슬라이드</title>
+<meta name="description" content="AWS · Kinesis · Firehose · S3 · 스트리밍 · 데이터적재 — 결과가 같은데 왜 Kinesis? — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">Firehose-vs-S3-직접-적재</span>.md</span></div>
+      <div class="ide-path">infra — UTF-8 · LF</div>
+      <a class="tab-back" href="../../infra/Firehose-vs-S3-직접-적재">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">14</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category infra · 스트리밍 데이터 적재</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">Firehose</span> vs<br />S3 직접 적재<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"결과가 같은데 왜 Kinesis를 쓰나?"</span><span class="op">;</span><br />
+          <span class="op">// S3에 데이터 쌓이는 건 똑같은데, Firehose의 이점은?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal" style="font-size:62px; line-height:1.3;">결과물은 같아 보여도, 직접 쏘면 <span class="em-r">적재 파이프라인을 전부 네가 만든다.</span></div>
+        <div class="sub reveal">Firehose는 그 파이프라인을 통째로 <span class="hl">관리형으로 대신</span>한다. 잘게·끊임없이 들어올수록 차이가 벌어진다.</div>
+      </div>
+    </section>
+
+    <!-- 3. 문제 제기 -->
+    <section class="slide" data-sec="문제 제기">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>"S3에 바로 쓰면 되잖아"</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>둘 다 결국 S3에 객체가 생긴다 — 정말 똑같을까?</div>
+<pre><span class="c">// A) 서버 → Kinesis Data Firehose → S3</span>
+producer.<span class="fn">putRecord</span>(event)   <span class="c">// 모아서 적재는 Firehose가</span>
+
+<span class="c">// B) 서버 → S3 직접 PutObject</span>
+s3.<span class="fn">putObject</span>(bucket, key, event)   <span class="c">// 한 건 = 한 객체</span></pre>
+        </div>
+        <div class="sub reveal">결과(S3에 데이터)만 봤을 뿐 — 실제로는 <span class="hl">모양·비용·내구성·운영 부담</span>이 전부 다르다.</div>
+      </div>
+    </section>
+
+    <!-- 4. ① 작은 파일 폭탄 -->
+    <section class="slide" data-sec="① 직접 S3의 문제">
+      <div class="buf" style="align-items:flex-start;">
+        <div class="formula reveal">건당 <b>PutObject</b> · 초당 수천 건 →</div>
+        <div class="bignum reveal">수백만<span style="font-size:96px; color:var(--fg-dim); font-weight:700;"> 객체</span></div>
+        <div class="sub reveal">분석 엔진은 <span class="hl">파일 여는 행위 자체에 고정 비용</span> — 1KB 백만 개보다 128MB 8개가 훨씬 빠르고 싸다. PUT 요청 비용도 객체 수만큼 누적.</div>
+      </div>
+    </section>
+
+    <!-- 5. ① 직접 만들어야 하는 것 + 내구성 -->
+    <section class="slide" data-sec="① 직접 구현 목록">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>직접 적재 = 직접 만들 목록</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">1</span><span class="t">버퍼링·배칭</span><span class="d">모았다가 크기/시간마다 <b>flush</b></span></div>
+          <div class="row reveal"><span class="n">2</span><span class="t">압축·포맷 변환</span><span class="d">gzip/snappy · JSON → <b>Parquet/ORC</b></span></div>
+          <div class="row reveal"><span class="n">3</span><span class="t">파티셔닝</span><span class="d"><b>year=/month=/day=</b> 경로로 쪼개기</span></div>
+          <div class="row reveal"><span class="n">4</span><span class="t">재시도·백프레셔</span><span class="d">실패 격리 + 스파이크 <b>완충</b></span></div>
+        </div>
+        <div class="callout reveal" style="margin-top:38px;">
+          <span class="ico">⚠️</span>
+          <div class="body">이걸 다 만들면 <b>미니 Firehose 재발명</b>. 인메모리 버퍼는 인스턴스가 죽으면 <b>flush 전 데이터 유실</b> — 내구성 책임까지 떠안는다.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. ② Firehose 버퍼링 -->
+    <section class="slide" data-sec="② Firehose · 버퍼링">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 버퍼링 — 설정 두 개로 끝</h2><span class="idx">먼저 닿는 조건에 flush</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>Firehose buffering hints</div>
+<pre><span class="ty">Buffer size</span>     = <span class="nu">128</span> MB    <span class="c">// 이만큼 쌓이면 flush</span>
+<span class="ty">Buffer interval</span> = <span class="nu">300</span> s    <span class="c">// 이 시간이 지나면 flush</span>
+
+<span class="c">// 트래픽 많으면 크기로, 적으면 시간으로 → 한 파일로 묶음</span></pre>
+        </div>
+        <div class="sub reveal">이 한 쌍이 <span class="hl">작은 파일 폭탄을 자동으로 차단</span>. (레코드 1건 최대 1,000 KB.)</div>
+      </div>
+    </section>
+
+    <!-- 7. ② 완전관리형 + 포맷변환 -->
+    <section class="slide" data-sec="② Firehose · 관리형">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 완전관리형 + 빌트인 변환</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">서버·스케일·HA</div><div class="a">프로비저닝 없음 · <span class="k2">자동 스케일</span> · 적재 전까지 <span class="k2">3 AZ 동기 복제</span></div></div>
+          <div class="cell reveal"><div class="q">포맷 변환</div><div class="a">JSON → <span class="k2">Parquet/ORC</span> 설정으로 내장</div></div>
+          <div class="cell reveal"><div class="q">압축</div><div class="a">gzip/snappy <span class="k2">설정</span></div></div>
+          <div class="cell reveal"><div class="q">저장 시 암호화</div><div class="a"><span class="k2">KMS</span> 설정</div></div>
+        </div>
+        <div class="sub reveal">컬럼형 포맷으로 두면 Athena가 필요한 컬럼만 읽어 <span class="hl">스캔량(=비용)이 크게 준다.</span></div>
+      </div>
+    </section>
+
+    <!-- 8. ② 동적 파티셔닝 -->
+    <section class="slide" data-sec="② Firehose · 동적 파티셔닝">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 동적 파티셔닝</h2><span class="idx">분석 비용을 직접 깎는다</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>레코드 안의 키로 S3 prefix를 자동 분기</div>
+<pre>s3://logs/year=<span class="nu">2026</span>/month=<span class="nu">06</span>/day=<span class="nu">21</span>/event=<span class="s">click</span>/...
+s3://logs/year=<span class="nu">2026</span>/month=<span class="nu">06</span>/day=<span class="nu">21</span>/event=<span class="s">purchase</span>/...</pre>
+        </div>
+        <div class="sub reveal"><span class="hl">WHERE가 파티션과 맞으면 그 prefix만 스캔</span> — "6/21 purchase만" 조회 시 나머지를 안 읽는다 → 스캔 비용↓.</div>
+      </div>
+    </section>
+
+    <!-- 9. ② 실패 격리 · 다중 목적지 · 비용 -->
+    <section class="slide" data-sec="② Firehose · 격리·목적지">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>② 실패 격리 · 다중 목적지</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">↺</span><span class="t">실패 레코드 격리</span><span class="d">실패분을 <b>S3 에러 prefix</b>에 따로 — 직접 구현 시 가장 빼먹는 부분</span></div>
+          <div class="row reveal"><span class="n">⇉</span><span class="t">다중 목적지</span><span class="d">S3 · Redshift · OpenSearch · Splunk · Iceberg · HTTP <b>(프로듀서 코드 그대로)</b></span></div>
+          <div class="row reveal"><span class="n">λ</span><span class="t">인라인 Lambda 변환</span><span class="d">적재 직전 <b>필드 마스킹·정제</b></span></div>
+        </div>
+        <div class="callout tip reveal" style="margin-top:38px;">
+          <span class="ico">💲</span>
+          <div class="body">수집 데이터양(GB) 종량제 — 액세스 로그 적재면 <b>GB당 ~$0.029</b>에서 시작 <span class="dim">(조건부: 리전·구간·부가기능에 따라 변동. 핵심은 "직접 만들 엔지니어링·운영 시간"과의 비교.)</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. ②-보강: 직접 S3가 맞는 때 -->
+    <section class="slide" data-sec="언제는 S3 직접">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>그럼 직접 S3가 맞는 때</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">야간 ETL 결과 파일 1개/일</div><div class="a"><span class="k2">S3 직접 PutObject</span> — 이미 크고 가끔, 버퍼링 불필요</div></div>
+          <div class="cell reveal"><div class="q">Spark이 만든 Parquet 출력</div><div class="a"><span class="k2">S3 직접</span> — 이미 큰 파일·올바른 포맷</div></div>
+        </div>
+        <div class="callout tip reveal" style="margin-top:44px;">
+          <span class="ico">🧭</span>
+          <div class="body">판별 질문 하나: <b>"잘게·끊임없이 들어오나, 큰 덩어리가 가끔 오나?"</b> <span class="dim">전자 → Firehose · 후자 → S3 직접이 보통 맞다.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 11. ③ KDS vs Firehose -->
+    <section class="slide" data-sec="③ KDS vs Firehose">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>③ Data Streams vs Firehose</h2><span class="idx">이름만 같다</span></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">Kinesis Data Streams (KDS)</div><div class="a">실시간 스트림 <span class="k2">버스</span> · 소비자 직접 작성 · 다중 소비자 O · <span class="k2">재생 최대 365일</span> · 샤드 단위 순서 · 지연 서브초</div></div>
+          <div class="cell reveal"><div class="q">Kinesis Data Firehose</div><div class="a">관리형 <span class="k2">적재기</span> · 소비자 없음 · 단일 목적지 · 재처리 X · 순서 보장 X · 지연 근실시간(초~분)</div></div>
+        </div>
+        <div class="sub reveal">한쪽은 <span class="hl">실시간 스트림 버스(저장·재생)</span>, 한쪽은 <span class="hl">완전관리형 적재기</span>.</div>
+      </div>
+    </section>
+
+    <!-- 12. ③ 조합 패턴 -->
+    <section class="slide" data-sec="③ 조합 패턴">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>자주 쓰는 조합</h2></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>실시간 처리 + 적재를 둘 다 해야 할 때</div>
+<pre>[프로듀서]
+   ├──&gt; <span class="g">Kinesis Data Streams</span> ──&gt; 실시간 소비자(Lambda/KCL)
+   │              │              <span class="c">// 알림·집계·이상탐지</span>
+   │              └──(KDS를 소스로)──&gt; <span class="g">Firehose</span> ──&gt; S3
+   │                                            <span class="c">// 분석용 적재</span></pre>
+        </div>
+        <div class="sub reveal">KDS가 <span class="hl">다중 실시간 처리 + 재생</span>을 맡고, S3 적재는 <span class="hl">Firehose에 위임</span> — 적재 코드를 직접 안 짠다.</div>
+      </div>
+    </section>
+
+    <!-- 13. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:50px; line-height:1.45;">
+          “직접 PutObject로 쏘면 <span class="em-r">적재 파이프라인을 전부 직접</span> 만들게 됩니다.<br />
+          <span class="em">Firehose</span>는 버퍼링·포맷변환·동적 파티셔닝·실패 격리를 <span class="em">관리형으로 대신</span>합니다.”
+        </div>
+        <div class="sub reveal">단, 큰 파일을 가끔 올리는 배치엔 과함 · <span class="hl">Data Streams</span>는 적재기가 아니라 실시간 스트림 버스(다중 소비자·재처리·순서).</div>
+      </div>
+    </section>
+
+    <!-- 14. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ 한 장 의사결정 · 다음 주제 →</div>
+        <h2 class="reveal">모으기만 → Firehose.<br />실시간·재처리 → KDS.<br />큰 배치 → S3 직접.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../infra/Firehose-vs-S3-직접-적재">Firehose vs S3 직접 적재.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../infra/네트워크">네트워크</a> · <a href="../../architecture/Kafka">Kafka</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>
