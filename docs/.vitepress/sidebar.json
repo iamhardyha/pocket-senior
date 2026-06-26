@@ -172,6 +172,10 @@
     "collapsed": false,
     "items": [
       {
+        "text": "AMP — AWS에서 Prometheus 메트릭 굴리기 (vs CloudWatch)",
+        "link": "/infra/AMP-Prometheus-vs-CloudWatch"
+      },
+      {
         "text": "Firehose vs S3 직접 적재 — 결과가 같은데 왜 Kinesis를 쓰나",
         "link": "/infra/Firehose-vs-S3-직접-적재"
       },

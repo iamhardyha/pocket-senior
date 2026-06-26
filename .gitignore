@@ -5,3 +5,4 @@ docs/.vitepress/cache/
 
 # 노트 제작 하네스 작업 공간 (중간 산출물, 커밋 제외)
 _workspace/
+_workspace_prev/

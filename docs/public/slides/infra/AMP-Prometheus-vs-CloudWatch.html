@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AMP — AWS에서 Prometheus 메트릭 굴리기 (vs CloudWatch) — Pocket Senior 슬라이드</title>
+<meta name="description" content="AMP, Prometheus, CloudWatch, Grafana, ADOT 사이드카, ECS Fargate, remote_write, PromQL, 관측성 — 출퇴근 백엔드 미니북 슬라이드" />
+
+<!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
+
+<style>
+/* ===========================================
+   FIXED 16:9 STAGE — MANDATORY BASE (verbatim from viewport-base.css)
+   =========================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-viewport { position:fixed; inset:0; overflow:hidden; background:var(--stage-bg,#000); }
+.deck-stage { position:absolute; left:0; top:0; width:1920px; height:1080px; overflow:hidden; transform-origin:0 0; background:var(--slide-bg,#fff); }
+.slide { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; display:block; visibility:hidden; opacity:0; pointer-events:none; background:var(--slide-bg,#fff); }
+.slide.active, .slide.visible { visibility:visible; opacity:1; pointer-events:auto; z-index:1; }
+img, video, canvas, svg { max-width:100%; max-height:100%; }
+.deck-controls { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:1000; }
+@media print {
+  html, body { width:1920px; height:auto; overflow:visible; background:#fff; }
+  .deck-viewport { position:static; overflow:visible; background:#fff; }
+  .deck-stage { position:static; width:auto; height:auto; transform:none !important; background:none; }
+  .slide { position:relative; display:block !important; visibility:visible !important; opacity:1 !important; pointer-events:auto !important; width:1920px; height:1080px; break-after:page; page-break-after:always; }
+  .slide:last-child { break-after:auto; page-break-after:auto; }
+  .deck-controls { display:none !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:0.01ms !important; transition-duration:0.2s !important; } }
+
+/* ===========================================
+   THEME — TERMINAL / IDE (house style)
+   Change these vars to re-skin every deck.
+   =========================================== */
+:root {
+  --stage-bg: #010409;
+  --slide-bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #0d1117;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --rail: #6e7681;
+
+  /* syntax palette (GitHub-dark inspired) */
+  --green: #3fb950;   /* status / ok / annotations highlight */
+  --red:   #ff7b72;   /* keywords, hashes, danger */
+  --blue:  #79c0ff;   /* numbers */
+  --lblue: #a5d6ff;   /* strings */
+  --purple:#d2a8ff;   /* functions / methods */
+  --orange:#ffa657;   /* types / classes */
+  --cyan:  #56d4dd;   /* accents */
+  --anno:  #7ee787;   /* @annotations */
+
+  --mono: 'JetBrains Mono', 'Noto Sans KR', monospace;
+
+  /* chrome geometry (authored at 1920×1080) */
+  --bar-h: 80px;
+  --status-h: 60px;
+  --pad-x: 120px;
+}
+
+/* ===========================================
+   PERSISTENT IDE CHROME (frame stays; buffer swaps)
+   =========================================== */
+.deck-stage { font-family: var(--mono); background: var(--slide-bg); }
+
+/* scanline texture over everything */
+.deck-stage::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+}
+
+/* --- top tab bar --- */
+.ide-tabbar {
+  position: absolute; top: 0; left: 0; right: 0; height: var(--bar-h); z-index: 5;
+  display: flex; align-items: center; gap: 22px; padding: 0 40px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.ide-traffic { display: flex; gap: 13px; }
+.ide-traffic i { width: 19px; height: 19px; border-radius: 50%; display: block; }
+.ide-traffic .r { background: #ff5f56; } .ide-traffic .y { background: #ffbd2e; } .ide-traffic .g { background: #27c93f; }
+.ide-tab { display: flex; align-items: center; gap: 13px; background: var(--panel-2); border: 1px solid var(--border); border-bottom: none; padding: 15px 26px; border-radius: 9px 9px 0 0; margin-bottom: -1px; font-size: 23px; color: var(--fg); font-weight: 500; }
+.ide-tab .fname { white-space: nowrap; }
+.ide-tab .md { color: var(--cyan); }
+.ide-tab .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--green); }
+.ide-path { margin-left: auto; font-size: 20px; color: var(--fg-dim); letter-spacing: 0.02em; }
+/* back-to-article control lives INSIDE the scaled tab bar → never collides, scales with stage */
+.tab-back { display: flex; align-items: center; font-family: var(--mono); font-size: 21px; font-weight: 600; color: var(--fg); background: var(--panel-2); border: 1px solid var(--border); padding: 11px 20px; border-radius: 8px; text-decoration: none; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+.tab-back:hover { border-color: var(--green); color: var(--green); }
+
+/* --- bottom status bar --- */
+.ide-status { position: absolute; left: 0; right: 0; bottom: 0; height: var(--status-h); z-index: 5; display: flex; align-items: center; background: var(--green); color: #04260b; font-size: 21px; font-weight: 700; }
+.ide-status .seg { padding: 0 30px; height: 100%; display: flex; align-items: center; gap: 11px; }
+.ide-status .seg.alt { background: rgba(0,0,0,0.18); }
+.ide-status .grow { margin-left: auto; }
+
+/* --- progress bar (very top of viewport — thin, conventional) --- */
+.progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--green); width: 0; z-index: 1001; box-shadow: 0 0 12px rgba(63,185,80,0.7); transition: width 0.35s cubic-bezier(0.16,1,0.3,1); }
+
+/* --- nav hint (inside stage → scales & stays anchored, never floats in letterbox) --- */
+.nav-hint { position: absolute; right: 40px; bottom: calc(var(--status-h) + 22px); z-index: 5; font-family: var(--mono); font-size: 20px; color: var(--fg-dim); opacity: 0.65; }
+
+/* ===========================================
+   SLIDE BUFFER (content area between chrome)
+   =========================================== */
+.slide { background: var(--slide-bg); }
+.buf {
+  position: absolute; inset: 0;
+  padding: calc(var(--bar-h) + 70px) var(--pad-x) calc(var(--status-h) + 56px);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.slide-c .buf { } /* cover handled separately */
+
+/* atmospheric glow per slide */
+.slide::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(1200px 760px at 100% 0%, rgba(63,185,80,0.06), transparent 55%);
+}
+.buf > * { position: relative; z-index: 1; }
+
+/* --- section heading (markdown ## style) --- */
+.s-head { display: flex; align-items: baseline; gap: 22px; margin-bottom: 52px; }
+.s-head .hash { color: var(--red); font-size: 46px; font-weight: 700; }
+.s-head h2 { color: var(--fg); font-size: 64px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.s-head .idx { margin-left: auto; font-size: 26px; color: var(--fg-dim); font-weight: 500; align-self: center; }
+
+/* --- big statement --- */
+.statement { font-size: 92px; font-weight: 800; line-height: 1.18; color: var(--fg); letter-spacing: -0.02em; }
+.statement .em { color: var(--green); }
+.statement .em-r { color: var(--red); }
+.sub { margin-top: 40px; font-size: 38px; color: var(--fg-dim); font-weight: 400; line-height: 1.5; }
+.sub .hl { color: var(--cyan); font-weight: 500; }
+
+/* --- code panel --- */
+.code {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  max-width: 1500px;
+}
+.code .cap { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); padding: 16px 28px; font-size: 22px; color: var(--fg-dim); }
+.code .cap .dotc { width: 11px; height: 11px; border-radius: 50%; background: var(--orange); }
+.code pre { padding: 34px 36px; font-size: 33px; line-height: 1.72; color: var(--fg); overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.code.tight pre { font-size: 30px; line-height: 1.62; }
+.k { color: var(--red); } .s { color: var(--lblue); } .fn { color: var(--purple); }
+.ty { color: var(--orange); } .nu { color: var(--blue); } .c { color: var(--fg-dim); font-style: italic; }
+.an { color: var(--anno); } .g { color: var(--green); }
+
+/* --- big number callout --- */
+.bignum { font-size: 230px; font-weight: 800; line-height: 0.92; letter-spacing: -0.04em; color: var(--fg); }
+.bignum .x { color: var(--red); }
+.formula { font-size: 64px; color: var(--fg-dim); font-weight: 500; margin-bottom: 16px; }
+.formula b { color: var(--cyan); }
+
+/* --- menu list (numbered methods) --- */
+.menu { display: flex; flex-direction: column; gap: 22px; max-width: 1560px; }
+.menu .row { display: flex; align-items: center; gap: 32px; background: var(--panel); border: 1px solid var(--border); border-left: 5px solid var(--green); border-radius: 12px; padding: 24px 34px; }
+.menu .row .n { font-size: 40px; font-weight: 800; color: var(--green); min-width: 56px; }
+.menu .row .t { font-size: 38px; font-weight: 700; color: var(--fg); min-width: 360px; }
+.menu .row .d { font-size: 28px; color: var(--fg-dim); }
+.menu .row .d b { color: var(--cyan); font-weight: 500; }
+
+/* --- callout (warning / tip) --- */
+.callout { display: flex; gap: 26px; align-items: flex-start; background: rgba(255,123,114,0.08); border: 1px solid rgba(255,123,114,0.4); border-radius: 14px; padding: 34px 40px; max-width: 1500px; }
+.callout.tip { background: rgba(63,185,80,0.08); border-color: rgba(63,185,80,0.4); }
+.callout .ico { font-size: 52px; line-height: 1; }
+.callout .body { font-size: 38px; line-height: 1.5; color: var(--fg); }
+.callout .body b { color: var(--red); } .callout.tip .body b { color: var(--green); }
+.callout .body .dim { color: var(--fg-dim); font-size: 32px; display: block; margin-top: 14px; }
+
+/* --- two-column (decision) --- */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 1560px; }
+.cols .cell { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 30px 34px; }
+.cols .cell .q { font-size: 30px; color: var(--cyan); font-weight: 700; margin-bottom: 14px; }
+.cols .cell .a { font-size: 34px; color: var(--fg); font-weight: 600; line-height: 1.4; }
+.cols .cell .a .k2 { color: var(--green); }
+
+/* ===========================================
+   COVER SLIDE
+   =========================================== */
+.cover { background: radial-gradient(1200px 800px at 100% 0%, rgba(63,185,80,0.08), transparent 55%), var(--slide-bg); }
+.cover .buf { justify-content: center; }
+.cover .kicker { color: var(--anno); font-size: 28px; margin-bottom: 30px; }
+.cover h1 { font-size: 158px; font-weight: 800; line-height: 1.02; color: var(--fg); letter-spacing: -0.02em; }
+.cover h1 .hash { color: var(--red); } .cover h1 .np { color: var(--green); }
+.cover .cursor { display: inline-block; width: 26px; height: 118px; background: var(--green); margin-left: 16px; vertical-align: -20px; animation: blink 1.05s step-end infinite; box-shadow: 0 0 24px rgba(63,185,80,0.6); }
+@keyframes blink { 50% { opacity: 0; } }
+.cover .q { margin-top: 50px; font-size: 38px; line-height: 1.7; color: var(--fg-dim); }
+.cover .q .kw { color: var(--purple); } .cover .q .var { color: var(--cyan); } .cover .q .str { color: var(--lblue); } .cover .q .op { color: var(--fg-dim); }
+
+/* ===========================================
+   CLOSING SLIDE
+   =========================================== */
+.closing { background: radial-gradient(900px 700px at 50% 120%, rgba(63,185,80,0.12), transparent 60%), var(--slide-bg); }
+.closing .buf { justify-content: center; align-items: flex-start; }
+.closing .prompt { font-size: 40px; color: var(--green); margin-bottom: 28px; }
+.closing h2 { font-size: 96px; font-weight: 800; color: var(--fg); line-height: 1.12; letter-spacing: -0.02em; }
+.closing .links { margin-top: 56px; display: flex; flex-direction: column; gap: 22px; font-size: 34px; }
+.closing .links a { color: var(--cyan); text-decoration: none; border-bottom: 2px solid transparent; }
+.closing .links .lead { color: var(--fg-dim); }
+
+/* ===========================================
+   ENTRANCE ANIMATIONS — replay each time a slide becomes .visible
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.08s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.20s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.34s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.48s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.62s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.76s; }
+.reveal-l { opacity: 0; transform: translateX(-40px); transition: opacity 0.7s cubic-bezier(0.16,1,0.3,1), transform 0.7s cubic-bezier(0.16,1,0.3,1); }
+.slide.visible .reveal-l { opacity: 1; transform: translateX(0); }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<div class="deck-viewport">
+  <main class="deck-stage" id="deckStage">
+
+    <!-- persistent IDE chrome -->
+    <div class="ide-tabbar">
+      <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">AMP-Prometheus-vs-CloudWatch</span>.md</span></div>
+      <div class="ide-path">infra — UTF-8 · LF</div>
+      <a class="tab-back" href="../../infra/AMP-Prometheus-vs-CloudWatch">← 원문으로</a>
+    </div>
+    <div class="nav-hint">← → · Space · swipe</div>
+    <div class="ide-status">
+      <div class="seg">⎇ pocket-senior</div>
+      <div class="seg alt">🟢 검증완료</div>
+      <div class="seg" id="secName">cover</div>
+      <div class="seg grow"></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">17</span></div>
+      <div class="seg">출퇴근 백엔드 미니북</div>
+    </div>
+
+    <!-- 1. COVER -->
+    <section class="slide cover active" data-sec="cover">
+      <div class="buf">
+        <div class="kicker reveal">@category infra · 관측성 · 메트릭</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">AMP</span> — AWS에서<br />Prometheus 굴리기<span class="cursor"></span></h1>
+        <div class="q reveal">
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"CloudWatch 두고 왜 또 Prometheus를?"</span><span class="op">;</span><br />
+          <span class="op">// AMP가 뭐고, ECS Fargate에선 어떻게 붙이나?</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 한 줄 요약 -->
+    <section class="slide" data-sec="summary">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
+        <div class="statement reveal" style="font-size:60px; line-height:1.3;">AMP는 <span class="em">Prometheus 서버 운영</span>을 AWS가 대신 맡는 <span class="em-r">서버리스 백엔드</span>다.</div>
+        <div class="sub reveal">CloudWatch는 <span class="hl">AWS 리소스를 손 안 대고 한곳에서</span> 볼 때, AMP는 <span class="hl">PromQL·Grafana·exporter 생태계를 그대로 이식</span>할 때 강하다.</div>
+      </div>
+    </section>
+
+    <!-- 3. AMP가 뭔가 -->
+    <section class="slide" data-sec="AMP란">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>AMP가 정확히 뭔가</h2><span class="idx">서버리스 · Prometheus 호환</span></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">Prometheus 그대로</span><span class="d">동일 데이터 모델 + <b>PromQL</b> · 기존 설정·대시보드·알람 룰을 코드 변경 없이 이식</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">서버리스</span><span class="d">스토리지·HA·스케일·보존을 AWS가 대신 — <b>굴릴 서버가 없다</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">고가용성 내장</span><span class="d">워크스페이스 데이터를 같은 리전 <b>3개 AZ에 복제</b></span></div>
+        </div>
+        <div class="sub reveal">보존 기본 <span class="hl">150일</span>, 최대 <span class="hl">3년(1095일)</span>. AMP는 '수집기'가 아니라 <span class="hl">'백엔드'</span> — 긁기는 ADOT가, AMP는 받아 저장·쿼리만.</div>
+      </div>
+    </section>
+
+    <!-- 4. 관측성 3축 -->
+    <section class="slide" data-sec="관측성 3축">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>관측성 3축에서 AMP의 자리</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">📈</span><span class="t">메트릭 Metrics</span><span class="d">시간에 따른 숫자 시계열(RPS·p99·CPU) → <b>Prometheus / AMP</b> · CloudWatch Metrics</span></div>
+          <div class="row reveal"><span class="n">📜</span><span class="t">로그 Logs</span><span class="d">사건의 텍스트 기록 → <b>CloudWatch Logs</b> · Loki · OpenSearch</span></div>
+          <div class="row reveal"><span class="n">🧭</span><span class="t">트레이스 Traces</span><span class="d">요청이 거쳐 간 경로(span 트리) → <b>X-Ray</b> · Tempo · Jaeger</span></div>
+        </div>
+        <div class="sub reveal">AMP는 <span class="hl">메트릭 한 축만</span> 담당 — 로그·트레이스는 다루지 않는다. 겨루는 상대도 CloudWatch 전체가 아닌 <span class="hl">'메트릭 부분'</span>.</div>
+      </div>
+    </section>
+
+    <!-- 5. 왜 AMP? 4가지 -->
+    <section class="slide" data-sec="왜 AMP?">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>"CloudWatch 있는데 왜 또?"</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">생태계 재사용</span><span class="d">exporter·Grafana 대시보드·알람 룰을 <b>그대로</b> 가져온다 (옮기려면 전부 다시 만든다)</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">PromQL 표현력</span><span class="d">rate()·histogram_quantile()·라벨 기반 집계가 <b>메트릭 분석에 특화</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">이식성</span><span class="d">표준 포맷 → 온프렘·타 클라우드로 그대로 (CloudWatch는 <b>AWS 락인</b>)</span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">멀티클러스터 집계</span><span class="d">여러 EKS/ECS를 <b>하나의 워크스페이스</b>로 통합 대시보드</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. CloudWatch가 이기는 때 -->
+    <section class="slide" data-sec="CloudWatch 우위">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>반대로 CloudWatch가 이기는 때</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">▸</span><span class="t">AWS 서비스 메트릭</span><span class="d">EC2·RDS·ALB·Lambda·SQS가 <b>자동 수집</b> — 손 안 댐 (AMP는 별도 구성 필요)</span></div>
+          <div class="row reveal"><span class="n">▸</span><span class="t">운영 단순함</span><span class="d">메트릭·로그·알람·대시보드를 <b>한 콘솔</b>에서 올인원</span></div>
+          <div class="row reveal"><span class="n">▸</span><span class="t">학습 비용</span><span class="d">Prometheus 안 써 봤다 → <b>새 도구 학습 부담 X</b></span></div>
+        </div>
+        <div class="callout tip reveal" style="margin-top:40px;">
+          <span class="ico">🤝</span>
+          <div class="body">현실 답은 자주 <b>"둘 다"</b> — AWS 인프라 메트릭은 CloudWatch, 앱/쿠버네티스 메트릭은 AMP+Grafana 하이브리드.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. 데이터 흐름도 -->
+    <section class="slide" data-sec="데이터 흐름">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>데이터 흐름 — Fargate에서 실제로</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>ECS Fargate Task · networkMode: awsvpc</div>
+<pre><span class="c">[app 컨테이너]</span>  <span class="fn">Micrometer</span> → GET /actuator/prometheus <span class="c">(:8080)</span>
+       <span class="c">│ scrape (localhost:8080)</span>
+<span class="c">[사이드카]</span>      <span class="fn">ADOT collector</span>  <span class="c">(receiver → remotewrite + sigv4)</span>
+       <span class="c">│ remote_write (HTTPS · SigV4 서명)</span>
+   <span class="g">AMP 워크스페이스</span>   <span class="c">(3-AZ 복제 · 기본 150일)</span>
+       <span class="c">│ PromQL (QueryMetrics API)</span>
+   <span class="g">Amazon Managed Grafana</span>   <span class="c">(대시보드)</span></pre>
+        </div>
+        <div class="sub reveal">5단계 — ① 노출 → ② 스크레이프 → ③ <span class="hl">SigV4 remote_write</span> → ④ 3-AZ 저장 → ⑤ Grafana 조회.</div>
+      </div>
+    </section>
+
+    <!-- 8. Fargate 사이드카 (강조) -->
+    <section class="slide" data-sec="Fargate 사이드카">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">!!</span><h2>Fargate엔 왜 '사이드카'인가</h2></div>
+        <div class="callout reveal">
+          <span class="ico">⚠️</span>
+          <div class="body">
+            <b>Fargate는 노드(호스트)를 네가 관리하지 않는다.</b> EC2/EKS면 노드마다 DaemonSet으로 에이전트를 한 번 깔면 끝 — 그런데 Fargate는 호스트 접근이 안 돼 <b>노드 단위 에이전트를 깔 자리가 없다.</b>
+            <span class="dim">완전관리형 collector는 EKS 전용 → ECS/Fargate는 ADOT를 직접 띄워야 한다.</span>
+          </div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ 정답: ADOT 수집기를 <span class="hl">앱과 같은 Task의 사이드카 컨테이너</span>로. 같은 Task라 <span class="hl">localhost</span>로 /actuator/prometheus를 긁는다.</div>
+      </div>
+    </section>
+
+    <!-- 9. 설정 ① Spring Boot 노출 -->
+    <section class="slide" data-sec="설정 ① 노출">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>설정 ① 메트릭 노출</h2><span class="idx">Spring Boot · Micrometer</span></div>
+        <div class="code reveal">
+          <div class="cap"><span class="dotc"></span>application.yml &nbsp;(+ micrometer-registry-prometheus 의존성)</div>
+<pre>management:
+  endpoints.web.exposure.include: health,info,<span class="g">prometheus</span>
+  metrics:
+    tags.application: order-service   <span class="c"># 공통 라벨</span>
+    distribution.percentiles-histogram:
+      http.server.requests: <span class="nu">true</span>   <span class="c"># _bucket 생성 → p99 가능</span></pre>
+        </div>
+        <div class="sub reveal">레지스트리가 클래스패스에 있으면 <span class="hl">/actuator/prometheus</span>가 자동으로 켜진다. histogram을 켜야 <span class="hl">histogram_quantile(p99)</span>가 나온다.</div>
+      </div>
+    </section>
+
+    <!-- 10. 설정 ② ADOT collector -->
+    <section class="slide" data-sec="설정 ② ADOT">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>설정 ② ADOT 수집기</h2><span class="idx">긁기 → 보내기 → 서명</span></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>adot-config.yaml</div>
+<pre>receivers:
+  prometheus:                  <span class="c"># /actuator/prometheus 스크레이프</span>
+    scrape_interval: <span class="nu">30s</span>       <span class="c"># ★ 비용의 핵심 손잡이</span>
+    targets: [<span class="s">'localhost:8080'</span>]   <span class="c"># 같은 Task → localhost</span>
+exporters:
+  prometheusremotewrite:       <span class="c"># AMP로 remote_write</span>
+    endpoint: <span class="s">".../ws-xxxx/api/v1/remote_write"</span>
+    auth: { authenticator: <span class="g">sigv4auth</span> }   <span class="c"># SigV4 서명</span>
+extensions: { <span class="g">sigv4auth</span>: { service: aps } }   <span class="c"># aps = AMP</span></pre>
+        </div>
+        <div class="sub reveal">세 부품 — <span class="hl">prometheus receiver</span>(긁기) → <span class="hl">remotewrite exporter</span>(보내기) → <span class="hl">sigv4auth</span>(AWS 인증).</div>
+      </div>
+    </section>
+
+    <!-- 11. 설정 ③ Task 사이드카 + IAM -->
+    <section class="slide" data-sec="설정 ③ Task·IAM">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>설정 ③ Task 사이드카 + IAM</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>task-definition.json — 같은 Task에 컨테이너 둘</div>
+<pre>{ <span class="s">"networkMode"</span>: <span class="s">"awsvpc"</span>,
+  <span class="s">"taskRoleArn"</span>: <span class="s">"...order-task-role"</span>,   <span class="c">// ★ AMP 쓰기 권한</span>
+  <span class="s">"containerDefinitions"</span>: [
+    { <span class="s">"name"</span>: <span class="s">"app"</span>, <span class="s">"portMappings"</span>: [{ containerPort: <span class="nu">8080</span> }] },
+    { <span class="s">"name"</span>: <span class="s">"adot-collector"</span>,            <span class="c">// localhost:8080 긁음</span>
+      <span class="s">"image"</span>: <span class="s">"public.ecr.aws/.../aws-otel-collector"</span> } ] }</pre>
+        </div>
+        <div class="callout reveal" style="margin-top:36px;">
+          <span class="ico">🔑</span>
+          <div class="body">Task Role에 <b>AmazonPrometheusRemoteWriteAccess</b> 누락 = 사이드카는 떠도 메트릭이 안 들어가고 <b>403/AccessDenied</b> — 현장 1순위 함정.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 12. PromQL 핵심 패턴 -->
+    <section class="slide" data-sec="PromQL">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>PromQL — 제일 많이 쓰는 패턴</h2></div>
+        <div class="code tight reveal">
+          <div class="cap"><span class="dotc"></span>라벨 기반 시계열 쿼리</div>
+<pre><span class="c"># ① 초당 요청 수(RPS) — counter엔 항상 rate()</span>
+<span class="fn">rate</span>(http_server_requests_seconds_count[<span class="nu">5m</span>])
+
+<span class="c"># ② p99 지연 — 히스토그램 분위수 (_bucket 필요)</span>
+<span class="fn">histogram_quantile</span>(<span class="nu">0.99</span>,
+  <span class="fn">sum</span> by (le) (<span class="fn">rate</span>(http_server_requests_seconds_bucket[<span class="nu">5m</span>])))
+
+<span class="c"># ③ 엔드포인트·상태코드별로 쪼개기</span>
+<span class="fn">sum</span> by (uri, status) (<span class="fn">rate</span>(..._count[<span class="nu">5m</span>]))</pre>
+        </div>
+        <div class="sub reveal">직관 셋 — <span class="hl">counter는 항상 rate()</span>, <span class="hl">p99는 _bucket 시계열 필요</span>(히스토그램 켜야), <span class="hl">sum by (label)</span>로 집계 축 자유.</div>
+      </div>
+    </section>
+
+    <!-- 13. 결정 기준 -->
+    <section class="slide" data-sec="결정 기준">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>AMP vs CloudWatch — 결정 기준</h2></div>
+        <div class="cols">
+          <div class="cell reveal"><div class="q">AWS 서비스 메트릭을 손 안 대고?</div><div class="a"><span class="k2">CloudWatch</span> — 자동 수집</div></div>
+          <div class="cell reveal"><div class="q">Prometheus·Grafana 자산 재사용?</div><div class="a"><span class="k2">AMP</span> — 그대로 이식</div></div>
+          <div class="cell reveal"><div class="q">멀티클라우드·멀티클러스터·이식성?</div><div class="a"><span class="k2">AMP</span> — 표준 포맷</div></div>
+          <div class="cell reveal"><div class="q">한 콘솔 올인원 · 운영 단순?</div><div class="a"><span class="k2">CloudWatch</span> — 락인 대가</div></div>
+        </div>
+        <div class="sub reveal">생태계·이식성이면 AMP, AWS 네이티브·단순함이면 CloudWatch — 현실은 <span class="hl">하이브리드</span>가 가장 흔하다.</div>
+      </div>
+    </section>
+
+    <!-- 14. 비용 4축 -->
+    <section class="slide" data-sec="비용 4축">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>비용 — 어디서 돈이 새나</h2><span class="idx">종량제 · 4개 축</span></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">수집 ingestion</span><span class="d">들어온 샘플 수 (≈$0.09/백만) — <b>보통 비용의 대부분</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">저장 storage</span><span class="d">$0.03/GB · <b>보통 소액</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">쿼리 QSP</span><span class="d">$0.10 / 10억 샘플 처리 — PromQL이 처리한 데이터포인트</span></div>
+          <div class="row reveal"><span class="n">④</span><span class="t">collector</span><span class="d">managed collector(EKS) 쓸 때만 · <b>ADOT 자체엔 없음</b></span></div>
+        </div>
+        <div class="sub reveal">인입(Data Transfer IN) 무료. 규모 예시(EKS 10노드·30초)는 월 ~893M 샘플 → <span class="hl">수집이 압도적으로 지배</span>.</div>
+      </div>
+    </section>
+
+    <!-- 15. 비용 최적화 -->
+    <section class="slide" data-sec="비용 최적화">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>비용 최적화 — 손잡이 순서</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">①</span><span class="t">scrape_interval ↑</span><span class="d">30s → 60s면 수집 샘플 절반 · <b>가장 즉효</b></span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">relabel_config로 drop</span><span class="d">안 쓰는 메트릭을 적재 전 제거 → <b>active series 감소</b></span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">알람은 AMP 네이티브 룰</span><span class="d">외부에서 PromQL 반복 호출은 <b>중복 쿼리로 비용↑</b></span></div>
+        </div>
+        <div class="callout tip reveal" style="margin-top:36px;">
+          <span class="ico">🧮</span>
+          <div class="body">
+            별개 기능 — Prometheus <b>Native Histogram</b>(Micrometer percentiles-histogram과 무관)은 채워진 bucket을 0.25 샘플로 과금 → 히스토그램 워크로드 비용 <b>최대 75%↓</b>.
+            <span class="dim">리텐션 단축은 효과 미미 — 저장이 원래 소액이라 결국 '수집'을 줄여야 한다.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16. 면접 답변 -->
+    <section class="slide" data-sec="면접 답변">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
+        <div class="statement reveal" style="font-size:44px; line-height:1.5;">
+          AMP는 <span class="em">Prometheus 호환 서버리스 메트릭 백엔드</span> — 서버 운영(HA·스케일)은 AWS가, 모델·PromQL은 그대로. <span class="em">3-AZ·기본 150일</span>.<br />
+          Fargate는 노드 에이전트를 못 깔아 ADOT를 <span class="em">같은 Task 사이드카</span>로 띄워 localhost 스크레이프 → <span class="em">SigV4 remote_write</span>.
+        </div>
+        <div class="sub reveal">비용은 <span class="hl">수집이 지배</span> — scrape_interval↑ · relabel drop · 네이티브 알람 순으로 최적화.</div>
+      </div>
+    </section>
+
+    <!-- 17. CLOSING -->
+    <section class="slide closing" data-sec="end">
+      <div class="buf">
+        <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
+        <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
+        <div class="links">
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../infra/AMP-Prometheus-vs-CloudWatch">AMP — Prometheus vs CloudWatch.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../infra/Firehose-vs-S3-직접-적재">Firehose vs S3 직접 적재</a> · <a href="../../failure/도메인-병목-관리">도메인 병목 관리</a></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   keyboard + touch + wheel nav, stage scaling, progress, status bar sync
+   =========================================== */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.stage = document.getElementById('deckStage');
+    this.progress = document.getElementById('progress');
+    this.pageNow = document.getElementById('pageNow');
+    this.pageTot = document.getElementById('pageTot');
+    this.secName = document.getElementById('secName');
+    this.current = 0;
+    this.pageTot.textContent = String(this.slides.length).padStart(2, '0');
+    this.fit();
+    window.addEventListener('resize', () => this.fit());
+    this.bindKeys();
+    this.bindTouch();
+    this.bindWheel();
+    this.bindClick();
+    // deep-link: ?s=N jumps to slide N on load
+    const start = parseInt(new URLSearchParams(location.search).get('s') || '0', 10);
+    this.show(Number.isNaN(start) ? 0 : start);
+  }
+
+  fit() {
+    const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    const x = (window.innerWidth - 1920 * s) / 2;
+    const y = (window.innerHeight - 1080 * s) / 2;
+    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  }
+
+  show(i) {
+    this.current = Math.max(0, Math.min(i, this.slides.length - 1));
+    this.slides.forEach((sl, idx) => {
+      const on = idx === this.current;
+      sl.classList.toggle('active', on);
+      sl.classList.toggle('visible', on);
+    });
+    const cur = this.slides[this.current];
+    this.pageNow.textContent = String(this.current + 1).padStart(2, '0');
+    this.secName.textContent = cur.getAttribute('data-sec') || '';
+    this.progress.style.width = ((this.current) / (this.slides.length - 1) * 100) + '%';
+  }
+
+  next() { this.show(this.current + 1); }
+  prev() { this.show(this.current - 1); }
+
+  bindKeys() {
+    document.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown':
+          e.preventDefault(); this.next(); break;
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+          e.preventDefault(); this.prev(); break;
+        case 'Home': e.preventDefault(); this.show(0); break;
+        case 'End': e.preventDefault(); this.show(this.slides.length - 1); break;
+      }
+    });
+  }
+
+  bindTouch() {
+    let x0 = null, y0 = null;
+    window.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    window.addEventListener('touchend', (e) => {
+      if (x0 === null) return;
+      const dx = e.changedTouches[0].clientX - x0;
+      const dy = e.changedTouches[0].clientY - y0;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? this.next() : this.prev(); }
+      x0 = y0 = null;
+    }, { passive: true });
+  }
+
+  bindWheel() {
+    let lock = false;
+    window.addEventListener('wheel', (e) => {
+      if (lock) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (Math.abs(d) < 24) return;
+      lock = true; d > 0 ? this.next() : this.prev();
+      setTimeout(() => { lock = false; }, 620);
+    }, { passive: true });
+  }
+
+  bindClick() {
+    // click right 1/3 → next, left 1/3 → prev (ignore links/buttons)
+    this.stage.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      const r = window.innerWidth;
+      if (e.clientX > r * 0.66) this.next();
+      else if (e.clientX < r * 0.34) this.prev();
+    });
+  }
+}
+new SlidePresentation();
+</script>
+</body>
+</html>
