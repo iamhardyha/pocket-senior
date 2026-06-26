@@ -8,8 +8,9 @@
   },
   "scripts": {
     "gen:sidebar": "npx tsx scripts/gen-sidebar.ts",
+    "check": "npx tsx scripts/check-consistency.ts",
     "dev": "npm run gen:sidebar && vitepress dev docs",
-    "build": "npm run gen:sidebar && vitepress build docs",
+    "build": "npm run check && npm run gen:sidebar && vitepress build docs",
     "preview": "vitepress preview docs"
   },
   "repository": {

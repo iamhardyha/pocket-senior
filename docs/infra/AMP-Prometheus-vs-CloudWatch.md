@@ -1,4 +1,5 @@
 ---
+title: AMP — Prometheus vs CloudWatch
 tags: [AWS, Prometheus, AMP, CloudWatch, Grafana, 관측성]
 question: "AMP가 뭐고, CloudWatch 두고 왜 또 Prometheus를 AWS에서 굴려?"
 status: 🟡

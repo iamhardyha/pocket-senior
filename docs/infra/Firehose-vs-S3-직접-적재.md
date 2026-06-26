@@ -1,4 +1,5 @@
 ---
+title: Firehose vs S3 직접 적재
 tags: [AWS, Kinesis, Firehose, S3, 스트리밍, 데이터적재]
 question: "Firehose로 보내는 거랑 S3에 바로 쓰는 거랑 결국 똑같은 거 아냐?"
 status: 🟡

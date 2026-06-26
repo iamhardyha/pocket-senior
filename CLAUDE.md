@@ -22,11 +22,13 @@ URL: https://iamhardyha.github.io/pocket-senior/
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
 | 2026-06-20 | 초기 구성 — 노트 제작 하네스(2단계 워크플로우, 에이전트 3 + 오케스트레이터 + how-to 스킬 3) | 전체 | Question Mode를 *구체화 단계 + 슬라이드 생성 + 검증 규율(원문 먼저 수정·웹 교차검증)* 포함 파이프라인으로 정식화 |
+| 2026-06-27 | 카테고리 index 페이지 자동 렌더(`CategoryNotes.vue`) 전환 + 정합성 검사(`scripts/check-consistency.ts`, 빌드 게이트) + `notes.data.ts` 유령 노트(디렉토리 인덱스) 수집 버그 수정 | 통합/검증 | 하드코딩 index.md 드리프트(노트 추가 시 누락)와 카테고리 카운트 +1 인플레이션 제거 — 단일 출처(notes.data.ts) 자동화 |
 
 ## Commands
 
 - `npm run dev` — 로컬 개발 서버
-- `npm run build` — 프로덕션 빌드
+- `npm run build` — 프로덕션 빌드 (`check` → `gen:sidebar` → vitepress build 순; 검사 실패 시 중단)
+- `npm run check` — 정합성 검사 (frontmatter·order 유일성·H1·슬라이드 양방향)
 - `npm run preview` — 빌드 결과 프리뷰
 - `npm run gen:sidebar` — 사이드바 재생성
 
@@ -36,16 +38,22 @@ URL: https://iamhardyha.github.io/pocket-senior/
 docs/                       <- Obsidian vault + VitePress source
 ├── .vitepress/
 │   ├── config.ts           <- VitePress 설정 (nav · head · GoatCounter)
-│   ├── data/notes.data.ts  <- 노트 메타 로더 (slides 필드 포함)
+│   ├── data/notes.data.ts  <- 노트 메타 로더 (단일 출처: index/카운트/갤러리/제목)
 │   └── theme/              <- 커스텀 라벤더 Editorial 테마
 │       ├── tokens.css · style.css          <- 디자인 토큰 · 전역 스타일
 │       ├── HomePage · QuestionList · TagCloud · SlidesGallery (.vue)
+│       ├── CategoryNotes.vue               <- 카테고리 index 자동 렌더 (드리프트 방지)
 │       ├── DocLayout · MetaBar · IssueFooter · VisitorCount (.vue)
 │       └── categories.ts
 ├── traffic/ concurrency/ failure/ database/ architecture/ infra/   <- 카테고리 노트
+│       └── index.md        <- `<CategoryNotes category="..."/>` 한 줄 (손대지 말 것)
 ├── public/slides/<category>/<note>.html    <- 수제작 슬라이드 덱
 ├── 00-질문목록.md · index.md · slides.md · changelog.md · tags.md
 └── superpowers/            <- 스펙/스크래치 (VitePress 빌드 제외)
+
+scripts/                    <- 빌드 도구
+├── gen-sidebar.ts          <- 사이드바 자동 생성
+└── check-consistency.ts    <- 정합성 검사 (빌드 게이트)
 
 .claude/                    <- 노트 제작 하네스 (Question Mode Workflow 실행)
 ├── agents/                 <- note-author · domain-verifier · slide-deck-builder
@@ -57,9 +65,11 @@ docs/                       <- Obsidian vault + VitePress source
 - 파일명: 한국어 kebab-case (예: `락과-동시성-제어.md`)
 - 내부 링크: 같은 디렉토리 `./file.md`, 다른 디렉토리 `../category/file.md`
 - 상태 표기: 🔴 미학습, 🟡 학습중, 🟢 완료
+- 카테고리 index 페이지는 **자동 렌더**(`CategoryNotes.vue` ← `notes.data.ts`) — `docs/<category>/index.md`를 손으로 고치지 말 것. 노트 카드/목록 제목은 **본문 H1 자동 사용**.
 - frontmatter 필수 필드:
   - `tags`: 기술 키워드(영문, e.g. Redis, Kafka) + 개념 키워드(한국어, e.g. 캐싱, 장애복구), 3~6개
   - `question`: 질문목록에 표시될 질문 텍스트
   - `status`: 🔴 미학습, 🟡 학습중, 🟢 완료
-  - `order`: 카테고리 내 정렬 순서 (정수)
-  - `slides`: `true`면 '▶ 슬라이드로 보기' 토글 + `/slides` 갤러리에 노출 (슬라이드 덱 생성 후 slide-deck-builder가 추가 — 덱 없이 켜면 고아 토글)
+  - `order`: 카테고리 내 정렬 순서 (정수, **카테고리 내 유일** — `npm run check`가 강제)
+  - `slides`: `true`면 '▶ 슬라이드로 보기' 토글 + `/slides` 갤러리에 노출 (슬라이드 덱 생성 후 slide-deck-builder가 추가 — 덱 없이 켜면 고아 토글, 덱 있는데 미설정이면 고아 덱; **양방향 검사**)
+  - `title`(선택): 본문 H1이 길 때 카드용 짧은 제목 오버라이드
