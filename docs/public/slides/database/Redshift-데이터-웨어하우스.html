@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>DynamoDB — 싱글테이블·키설계·핫파티션 — Pocket Senior 슬라이드</title>
-<meta name="description" content="DynamoDB, 싱글테이블, 키 오버로딩, GSI/LSI, 용량 모드, 핫파티션, write sharding, Streams — 출퇴근 백엔드 미니북 슬라이드" />
+<title>Redshift — 데이터 웨어하우스 — Pocket Senior 슬라이드</title>
+<meta name="description" content="Redshift, MPP, 컬럼형, 분산키(DISTKEY), 정렬키(SORTKEY), Spectrum, Athena vs Redshift — 출퇴근 백엔드 미니북 슬라이드" />
 
 <!-- Fonts: JetBrains Mono (code) + Noto Sans KR (Korean glyphs in mono context) -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -228,9 +228,9 @@ img, video, canvas, svg { max-width:100%; max-height:100%; }
     <!-- persistent IDE chrome -->
     <div class="ide-tabbar">
       <div class="ide-traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
-      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">DynamoDB</span>.md</span></div>
+      <div class="ide-tab"><span class="dot"></span><span class="fname"><span class="md">Redshift-데이터-웨어하우스</span>.md</span></div>
       <div class="ide-path">database — UTF-8 · LF</div>
-      <a class="tab-back" href="../../database/DynamoDB">← 원문으로</a>
+      <a class="tab-back" href="../../database/Redshift-데이터-웨어하우스">← 원문으로</a>
     </div>
     <div class="nav-hint">← → · Space · swipe</div>
     <div class="ide-status">
@@ -238,226 +238,188 @@ img, video, canvas, svg { max-width:100%; max-height:100%; }
       <div class="seg alt">🟢 검증완료</div>
       <div class="seg" id="secName">cover</div>
       <div class="seg grow"></div>
-      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">15</span></div>
+      <div class="seg alt"><span id="pageNow">01</span> / <span id="pageTot">13</span></div>
       <div class="seg">출퇴근 백엔드 미니북</div>
     </div>
 
     <!-- 1. COVER -->
     <section class="slide cover active" data-sec="cover">
       <div class="buf">
-        <div class="kicker reveal">@category database · NoSQL 키 설계</div>
-        <h1 class="reveal"><span class="hash"># </span><span class="np">DynamoDB</span><br />싱글테이블 · 핫파티션<span class="cursor"></span></h1>
+        <div class="kicker reveal">@category database · 데이터 웨어하우스</div>
+        <h1 class="reveal"><span class="hash"># </span><span class="np">Redshift</span><br />데이터 웨어하우스<span class="cursor"></span></h1>
         <div class="q reveal">
-          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"액세스 패턴 → PK/SK · 싱글테이블 · GSI · 핫파티션"</span><span class="op">;</span><br />
-          <span class="op">// 쿼리를 먼저 정하고, 키를 거기에 끼워 맞춘다</span>
+          <span class="kw">const</span> <span class="var">question</span> <span class="op">=</span> <span class="str">"왜 빠른가 · 분산키 · 정렬키 · Athena vs Redshift"</span><span class="op">;</span><br />
+          <span class="op">// 컬럼형 + MPP, 그리고 언제 무엇을 고를까?</span>
         </div>
       </div>
     </section>
 
     <!-- 2. 한 줄 요약 -->
-    <section class="slide" data-sec="summary">
+    <section class="slide" data-sec="한 줄 요약">
       <div class="buf">
         <div class="s-head reveal"><span class="hash">&gt;</span><h2>한 줄 요약</h2></div>
-        <div class="statement reveal">쿼리를 <span class="em">먼저</span> 정하고<br />키를 거기에 <span class="em">끼워 맞춘다</span>.</div>
-        <div class="sub reveal">RDB는 정규화 후 쿼리. DynamoDB는 <span class="hl">액세스 패턴 먼저 → PK/SK 설계</span>. 잘 짜면 어떤 규모든 한 자릿수 ms, 못 짜면 <span class="hl">핫파티션 throttle</span>.</div>
+        <div class="statement reveal">Redshift = 컬럼형 + <span class="em">MPP</span>.</div>
+        <div class="sub reveal">빠름의 핵심은 <span class="hl">읽을 양 줄이기(컬럼형·정렬키)</span> · <span class="hl">노드 간 이동 없애기(분산키)</span>. 반복 BI엔 Redshift, 가끔 애드혹엔 Athena.</div>
       </div>
     </section>
 
-    <!-- 3. RDB vs DynamoDB · 언제 -->
-    <section class="slide" data-sec="RDB vs DynamoDB">
+    <!-- 3. MPP 아키텍처 -->
+    <section class="slide" data-sec="MPP 아키텍처">
       <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>RDB vs DynamoDB — 언제?</h2></div>
-        <div class="cols">
-          <div class="cell reveal"><div class="q">DynamoDB가 빛날 때</div><div class="a">세션·장바구니·프로필 · 리더보드 · IoT 로그 — <span class="k2">키 단건/범위 · 높은 처리량</span></div></div>
-          <div class="cell reveal"><div class="q">RDB가 나을 때</div><div class="a">다중 JOIN · 애드혹 분석 · <span class="k2">SUM/GROUP BY</span> · 관계가 자주 바뀌는 도메인</div></div>
-          <div class="cell reveal"><div class="q">확장 · 성능</div><div class="a">자동 파티션 분할(Scale-Out) · <span class="k2">규모와 무관하게 일정</span>한 키 조회</div></div>
-          <div class="cell reveal"><div class="q">왜 JOIN이 없나</div><div class="a">조인할 데이터를 <span class="k2">처음부터 같은 파티션에</span> — 싱글테이블의 뿌리</div></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 4. 키 모델 -->
-    <section class="slide" data-sec="키 모델">
-      <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>키 모델 — PK & SK</h2></div>
-        <div class="code reveal">
-          <div class="cap"><span class="dotc"></span>Primary Key = Partition Key (+ Sort Key)</div>
-<pre><span class="k">PK</span> (Partition Key) ──<span class="fn">hash</span>(PK)──▶ 어느 <span class="g">물리 파티션</span>에 저장할지 결정
-<span class="k">SK</span> (Sort Key)      ──────────▶ 같은 PK 안에서 <span class="g">정렬</span> + <span class="g">범위 쿼리</span>
-
-<span class="c">// PK = 고카디널리티여야 핫파티션 회피 (값 종류 많고 고르게 분산)</span>
-<span class="c">// SK = 사전식 정렬 → "2026-06-30#..." 처럼 정렬가능 문자열로</span></pre>
-        </div>
-        <div class="sub reveal">같은 PK 아이템들이 SK로 정렬돼 한 곳에 모인다 = <span class="hl">아이템 컬렉션</span>.</div>
-      </div>
-    </section>
-
-    <!-- 5. 읽기 연산 3종 -->
-    <section class="slide" data-sec="읽기 연산">
-      <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>읽기 연산 3종 — 비용이 다르다</h2></div>
+        <div class="s-head reveal"><span class="hash">##</span><h2>MPP 아키텍처</h2><span class="idx">리더 · 컴퓨트 · 슬라이스</span></div>
         <div class="menu">
-          <div class="row reveal"><span class="n">G</span><span class="t">GetItem</span><span class="d">PK(+SK)로 <b>단건</b> 조회 · 가장 쌈 O(1)</span></div>
-          <div class="row reveal"><span class="n">Q</span><span class="t">Query</span><span class="d"><b>하나의 PK 고정</b> + SK 조건 다건 · 읽은 만큼만 과금</span></div>
-          <div class="row reveal"><span class="n">S</span><span class="t">Scan</span><span class="d">테이블 <b>전체 순회</b> 후 필터 · 운영에서 금지</span></div>
+          <div class="row reveal"><span class="n">①</span><span class="t">리더 노드 (1개)</span><span class="d">클라이언트와 통신·쿼리 파싱·실행계획→컴퓨트 배포·부분결과 <b>최종 집계</b>. 데이터는 안 들고 있음</span></div>
+          <div class="row reveal"><span class="n">②</span><span class="t">컴퓨트 노드 (N개)</span><span class="d">각자 독립 <b>CPU·메모리·디스크</b>로 실제 데이터 저장·연산</span></div>
+          <div class="row reveal"><span class="n">③</span><span class="t">슬라이스(slice)</span><span class="d">컴퓨트를 더 쪼갠 <b>병렬 처리 최소 단위</b>. 노드 N × 슬라이스 = N갈래 병렬</span></div>
         </div>
-        <div class="sub reveal">"PK 없이 조회하고 싶다"는 패턴이 생기면 → <span class="hl">보조 인덱스(GSI/LSI)</span>가 필요한 신호.</div>
       </div>
     </section>
 
-    <!-- 6. 싱글테이블 -->
-    <section class="slide" data-sec="싱글테이블">
+    <!-- 4. 왜 빠른가 -->
+    <section class="slide" data-sec="왜 빠른가">
       <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>싱글테이블 — 키 오버로딩</h2></div>
+        <div class="s-head reveal"><span class="hash">##</span><h2>왜 빠른가 — 컬럼형 × MPP</h2></div>
+        <div class="cols reveal">
+          <div class="cell"><div class="q">행 기반 (OLTP)</div><div class="a">한 행의 모든 컬럼이 붙어 있음 → <span class="k2">amount</span>만 필요해도 전체 블록을 읽음</div></div>
+          <div class="cell"><div class="q">컬럼형 (Redshift)</div><div class="a">같은 컬럼끼리 붙어 있음 → <span class="k2">필요한 컬럼 블록만</span> + 높은 압축률</div></div>
+        </div>
+        <div class="sub reveal">읽을 컬럼만(컬럼형) <b>×</b> 압축으로 더 적게 <b>×</b> 여러 슬라이스가 동시에(MPP) = 대규모 집계 가속.</div>
+        <div class="callout reveal" style="margin-top:32px;">
+          <span class="ico">⚠️</span>
+          <div class="body">단건 조회·잦은 <b>UPDATE/DELETE</b>엔 오히려 불리 <span class="dim">분석용 웨어하우스지 운영 DB가 아니다.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. 재분배 -->
+    <section class="slide" data-sec="재분배">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>재분배 — 조인의 가장 큰 비용</h2></div>
+        <div class="sub reveal" style="margin-top:0;">조인할 두 행이 <span class="hl">다른 노드</span>에 있으면 네트워크로 옮겨야 한다 = <span class="hl">재분배(redistribution)</span>.</div>
+        <div class="callout reveal" style="margin-top:40px;">
+          <span class="ico">💸</span>
+          <div class="body">EXPLAIN에 비용이 보인다 — <b>DS_DIST_NONE</b>(이동 없음)이 최선, <b>DS_DIST_BOTH</b>(양쪽 재분배)가 최악. 큰 쿼리에선 재분배가 비용의 가장 큰 덩어리.</div>
+        </div>
+        <div class="sub reveal" style="margin-top:44px;">→ <span class="hl">DISTKEY로 조인 키를 맞추면</span> 매칭 행이 같은 슬라이스에 모여(코로케이션) 재분배가 사라진다 → DS_DIST_NONE.</div>
+      </div>
+    </section>
+
+    <!-- 6. 분산 스타일 4가지 -->
+    <section class="slide" data-sec="DISTSTYLE">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>분산 스타일 4가지</h2><span class="idx">DISTSTYLE</span></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">K</span><span class="t">KEY</span><span class="d">DISTKEY 컬럼 해시로 배치 · 같은 키=같은 슬라이스. <b>자주 조인하는 큰 팩트 테이블</b></span></div>
+          <div class="row reveal"><span class="n">A</span><span class="t">ALL</span><span class="d">전체를 모든 노드에 복제. <b>작고(&lt;5백만 행) 안 바뀌는 디멘션</b> · 이동 0, 저장 N배</span></div>
+          <div class="row reveal"><span class="n">E</span><span class="t">EVEN</span><span class="d">라운드로빈 균등 분산(키 무관). <b>조인 적고 스캔 위주</b>, 마땅한 키 없을 때</span></div>
+          <div class="row reveal"><span class="n">∗</span><span class="t">AUTO (기본)</span><span class="d">크기·패턴 보고 <b>자동 선택·변경</b>. 잘 모르면 AUTO로 두고 모니터링</span></div>
+        </div>
+        <div class="sub reveal" style="margin-top:34px;">분산키 선택: ① 자주 조인하는 키 ② 카디널리티 높아 <span class="hl">고르게 분산</span>(쏠리면 스큐).</div>
+      </div>
+    </section>
+
+    <!-- 7. 정렬키 / zone map -->
+    <section class="slide" data-sec="정렬키 · zone map">
+      <div class="buf">
+        <div class="s-head reveal"><span class="hash">##</span><h2>정렬키 — zone map으로 스캔 스킵</h2><span class="idx">SORTKEY</span></div>
         <div class="code tight reveal">
-          <div class="cap"><span class="dotc"></span>액세스 패턴 먼저 → PK/SK에 타입 접두사로 여러 엔티티 동거</div>
-<pre><span class="c">PK              | SK                    | 속성</span>
-USER#123        | PROFILE               | name=김개발 …
-USER#123        | <span class="s">ORDER#2026-06-01#A1</span>   | amount=50000, status=PAID
-USER#123        | <span class="s">ORDER#2026-06-15#A2</span>   | status=PENDING
-PRODUCT#P100    | META                  | name=노트북 …
-PRODUCT#P100    | <span class="s">REVIEW#2026-06-20#R1</span>  | rating=5 …
+          <div class="cap"><span class="dotc"></span>block skipping</div>
+<pre><span class="c">-- SORTKEY(created_at) 로 정렬 저장 (블록마다 min/max = zone map)</span>
+블록1: 2026-01-01 ~ 01-10
+블록2: 2026-01-11 ~ 01-20
+블록3: 2026-01-21 ~ 01-31
 
-<span class="c">// Query(PK="USER#123") 한 방 = 프로필 + 주문 전부 (JOIN 없이 1왕복)</span></pre>
+<span class="k">WHERE</span> created_at &gt;= <span class="s">'2026-01-21'</span>
+  <span class="c">→ zone map 보고 블록1·2 통째로 스킵, 블록3부터만 읽음</span></pre>
         </div>
-        <div class="sub reveal">"테이블 1개"는 목표가 아니라 <span class="hl">왕복·비용 최소화의 수단</span> — 패턴이 단순하면 엔티티별로 쪼개는 게 낫다.</div>
+        <div class="sub reveal">범위·WHERE에 자주 쓰는 컬럼(특히 날짜)을 SORTKEY로 → 스캔량 급감. 기본 <span class="hl">Compound</span>(첫 키로 거르기 강함).</div>
       </div>
     </section>
 
-    <!-- 7. GSI vs LSI -->
-    <section class="slide" data-sec="GSI vs LSI">
+    <!-- 8. 실전 DDL + COPY -->
+    <section class="slide" data-sec="실전 DDL">
       <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>보조 인덱스 — GSI vs LSI</h2></div>
-        <div class="cols">
-          <div class="cell reveal"><div class="q">GSI — 키 둘 다 새로</div><div class="a"><span class="k2">PK·SK 모두 재지정</span> · 언제든 추가 · 결과적 일관성만 · <span class="k2">독립 용량</span></div></div>
-          <div class="cell reveal"><div class="q">LSI — SK만 다르게</div><div class="a">PK는 베이스와 동일 · <span class="k2">테이블 생성 시에만</span> · 강한 일관성 가능 · 용량 공유</div></div>
-          <div class="cell reveal"><div class="q">실무 기본은?</div><div class="a"><span class="k2">대부분 GSI</span> — 추가/삭제 자유 · LSI는 이후 못 바꾼다</div></div>
-          <div class="cell reveal"><div class="q">GSI 주의</div><div class="a">쓰기 용량 부족 → <span class="k2">백프레셔로 베이스까지 throttle</span> · 프로젝션 좁게·sparse하게</div></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 8. 용량 모드 -->
-    <section class="slide" data-sec="용량 모드">
-      <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>용량 모드 — On-demand vs Provisioned</h2></div>
-        <div class="cols">
-          <div class="cell reveal"><div class="q">On-demand (대개 권장)</div><div class="a"><span class="k2">요청한 만큼</span> 과금 · 용량 계획 불필요 · 스파이크 즉시 수용</div></div>
-          <div class="cell reveal"><div class="q">Provisioned</div><div class="a">미리 설정한 <span class="k2">RCU/WCU</span> · 피크 예측 필요 · 꾸준한 워크로드 비용 최적</div></div>
-          <div class="cell reveal"><div class="q">권장 흐름</div><div class="a">초기 <span class="k2">On-demand</span> → 꾸준해지면 <span class="k2">Provisioned + Auto Scaling</span></div></div>
-          <div class="cell reveal"><div class="q">비용 성격</div><div class="a">On-demand=변동(쓴 만큼) · Provisioned=<span class="k2">예측가능(켜둔 만큼)</span></div></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 9. RCU / WCU -->
-    <section class="slide" data-sec="RCU / WCU">
-      <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>RCU / WCU 환산</h2></div>
-        <div class="code reveal">
-          <div class="cap"><span class="dotc"></span>아이템 크기 × 일관성으로 환산</div>
-<pre><span class="nu">1 RCU</span> = <span class="nu">4KB</span> 강한 일관성 읽기 1회/초
-        = <span class="nu">4KB</span> 결과적 일관성 읽기 <span class="g">2회/초</span>  <span class="c">// 읽기 비용 절반</span>
-<span class="nu">1 WCU</span> = <span class="nu">1KB</span> 쓰기 1회/초
-
-<span class="c">// 예: 8KB 아이템 강한 일관성 초당 10회 읽기</span>
-<span class="c">//   → 2 RCU(8KB=4KB×2) × 10 = 20 RCU</span></pre>
-        </div>
-        <div class="sub reveal"><span class="hl">트랜잭션은 용량 2배</span> — 내부 prepare·commit 두 단계. On-demand는 같은 환산을 RRU/WRU로 부른다.</div>
-      </div>
-    </section>
-
-    <!-- 10. 핫 파티션 + Adaptive capacity -->
-    <section class="slide" data-sec="핫 파티션">
-      <div class="buf">
-        <div class="s-head reveal"><span class="hash">!!</span><h2>핫 파티션 — 사고의 8할</h2></div>
+        <div class="s-head reveal"><span class="hash">##</span><h2>실전 DDL — 스타 스키마 + COPY</h2></div>
         <div class="code tight reveal">
-          <div class="cap"><span class="dotc"></span>단일 파티션 물리 한계</div>
-<pre>한 파티션 최대치 ≈ <span class="nu">3,000 RCU</span> / <span class="nu">1,000 WCU</span>   (크기 ≈ <span class="nu">10GB</span>)
+          <div class="cap"><span class="dotc"></span>fact / dimension 설계</div>
+<pre><span class="k">CREATE TABLE</span> fact_orders (
+    order_id <span class="ty">BIGINT</span>, user_id <span class="ty">BIGINT</span>,
+    amount <span class="ty">DECIMAL</span>(12,2), created_at <span class="ty">TIMESTAMP</span>
+)
+<span class="k">DISTSTYLE</span> KEY <span class="k">DISTKEY</span> (user_id)        <span class="c">-- 조인 키 분산 → 재분배 제거</span>
+<span class="k">COMPOUND SORTKEY</span> (created_at);          <span class="c">-- 날짜 범위 가속 (zone map)</span>
 
-<span class="c">// 테이블 전체 용량이 남아도, 트래픽이 한 PK에 쏠리면</span>
-<span class="c">// 그 파티션 한계에 먼저 부딪혀 throttle</span>
-<span class="c">// (ProvisionedThroughputExceededException)</span></pre>
+<span class="k">CREATE TABLE</span> dim_user ( ... ) <span class="k">DISTSTYLE</span> ALL;  <span class="c">-- 전 노드 복제 → 이동 0</span></pre>
         </div>
-        <div class="callout tip reveal" style="margin-top:38px;">
-          <span class="ico">✅</span>
-          <div class="body"><b>Adaptive capacity</b> — 핫 파티션 감지 시 처리량 자동 부스트(자동·무료). 단 <b>단일 키 절대 한도(1,000 WCU)</b>는 못 넘는다 <span class="dim">→ 근본 해결은 인프라가 아니라 데이터 모델링</span></div>
+        <div class="callout tip reveal" style="margin-top:36px;">
+          <span class="ico">⭐</span>
+          <div class="body">적재는 INSERT가 아니라 <b>COPY</b> — S3 파일을 여러 슬라이스가 병렬로 빨아들인다. <span class="dim">파일을 슬라이스 수의 배수로 쪼개면 병렬이 고르게 된다.</span></div>
         </div>
       </div>
     </section>
 
-    <!-- 11. Write Sharding -->
-    <section class="slide" data-sec="write sharding">
+    <!-- 9. RA3 · Serverless · Spectrum -->
+    <section class="slide" data-sec="RA3 · Serverless · Spectrum">
       <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>Write Sharding — 쏠린 키 흩뿌리기</h2></div>
-        <div class="code reveal">
-          <div class="cap"><span class="dotc"></span>핫한 논리 키를 키#0..#N-1 로 분산</div>
-<pre><span class="c">// 나쁨: 모든 OPEN 주문이 한 파티션 → 쓰기 폭주</span>
-PK = <span class="s">"STATUS#OPEN"</span>
-
-<span class="c">// 좋음: id 해시 % 10 으로 샤드 선택 → 10배 분산</span>
-PK = <span class="s">"STATUS#OPEN#{0..9}"</span>
-
-<span class="c">// 읽기(scatter-gather): 0..9 모두 Query 후 앱에서 merge</span></pre>
+        <div class="s-head reveal"><span class="hash">##</span><h2>컴퓨트 / 스토리지 분리</h2><span class="idx">RA3 · Serverless · Spectrum</span></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">▣</span><span class="t">RA3 + RMS</span><span class="d">핫=로컬 SSD, 콜드=S3 기반 RMS 자동 계층화. <b>컴퓨트와 스토리지(GB-month) 분리 과금</b></span></div>
+          <div class="row reveal"><span class="n">∞</span><span class="t">Serverless</span><span class="d">클러스터 없이 <b>RPU</b> 단위 · base RPU 잡고 오토스케일, 쓴 만큼 과금</span></div>
+          <div class="row reveal"><span class="n">⌕</span><span class="t">Spectrum</span><span class="d">외부 테이블로 S3를 적재 없이 직접 SQL · <b>Glue Catalog 공유</b>(Athena와 동일)</span></div>
         </div>
-        <div class="callout reveal" style="margin-top:38px;">
-          <span class="ico">⚖️</span>
-          <div class="body">트레이드오프 — 쓰기는 <b>N배 분산</b>되지만 전체 읽기는 <b>샤드 N개 fan-out</b>. N은 그 균형점으로 잡는다.</div>
+        <div class="callout reveal" style="margin-top:32px;">
+          <span class="ico">⚠️</span>
+          <div class="body">Spectrum(S3 외부테이블) 스캔은 <b>$5/TB 별도</b>. 무과금은 <b>Serverless(RPU 포함)뿐</b> — 프로비저닝 RA3는 S3 쿼리에 $5/TB가 따로 붙는다.</div>
         </div>
       </div>
     </section>
 
-    <!-- 12. Streams & Transactions -->
-    <section class="slide" data-sec="Streams & Tx">
+    <!-- 10. Athena vs Redshift -->
+    <section class="slide" data-sec="Athena vs Redshift">
       <div class="buf">
-        <div class="s-head reveal"><span class="hash">##</span><h2>Streams & Transactions</h2></div>
-        <div class="cols">
-          <div class="cell reveal"><div class="q">Streams — 변경 캡처</div><div class="a">아이템 변경을 <span class="k2">시간순 로그</span>로 → Lambda 자동 트리거 (DynamoDB판 CDC)</div></div>
-          <div class="cell reveal"><div class="q">무엇에 잇나</div><div class="a">검색(OpenSearch) 동기화 · <span class="k2">집계 테이블</span> 갱신 · S3 데이터레이크</div></div>
-          <div class="cell reveal"><div class="q">Transactions</div><div class="a"><span class="k2">all-or-nothing</span> — 주문+재고+잔액 한 묶음 · 조건 위반 시 전체 롤백</div></div>
-          <div class="cell reveal"><div class="q">Tx 제약</div><div class="a">한 트랜잭션 <span class="k2">최대 100 아이템</span> · 용량 2배 → 꼭 필요한 곳만</div></div>
+        <div class="s-head reveal"><span class="hash">##</span><h2>Athena vs Redshift — 언제 무엇을</h2></div>
+        <div class="cols reveal">
+          <div class="cell"><div class="q">Athena</div><div class="a"><span class="k2">애드혹·탐색·간헐</span> 쿼리<br />스캔 $5/TB · 안 쓰면 0<br />S3 그대로 · 운영 부담 0</div></div>
+          <div class="cell"><div class="q">Redshift</div><div class="a"><span class="k2">반복 BI·복잡 조인·낮은 지연·많은 동시 사용자</span><br />노드/RPU + RMS<br />적재해 분산·정렬 튜닝</div></div>
         </div>
+        <div class="sub reveal">가끔·탐색이면 Athena, 반복·고정 BI면 Redshift. 둘은 <span class="hl">Glue Catalog 공유</span> → Spectrum으로 핫+콜드 한 쿼리(레이크하우스).</div>
       </div>
     </section>
 
-    <!-- 13. 실전 설계 흐름 -->
-    <section class="slide" data-sec="설계 흐름">
+    <!-- 11. 비용 -->
+    <section class="slide" data-sec="비용">
       <div class="buf">
-        <div class="s-head reveal"><span class="hash">$</span><h2>실전 설계 흐름</h2></div>
-        <div class="code tight reveal">
-          <div class="cap"><span class="dotc"></span>위에서 아래로 — 하나라도 빠지면 운영에서 throttle로 돌아온다</div>
-<pre><span class="nu">①</span> 패턴 나열   유저 주문목록 · 주문단건 · 상태별(운영)
-<span class="nu">②</span> 키 설계     PK=<span class="s">USER#id</span> · SK=<span class="s">ORDER#날짜#id</span> (PROFILE 동거)
-<span class="nu">③</span> GSI         <span class="s">GSI1PK=STATUS#상태</span> · GSI1SK=날짜#id (sparse)
-<span class="nu">④</span> 핫키 점검   쏠림? → <span class="g">write sharding</span> (#0..#N)
-<span class="nu">⑤</span> 용량 모드   On-demand → 꾸준하면 Provisioned+AutoScaling
-<span class="nu">⑥</span> 변경 후속   <span class="g">Streams → Lambda</span> → 집계·검색·S3</pre>
+        <div class="s-head reveal"><span class="hash">##</span><h2>비용 정리</h2></div>
+        <div class="menu">
+          <div class="row reveal"><span class="n">$</span><span class="t">컴퓨트</span><span class="d">RA3 노드 시간 <b>또는</b> Serverless RPU-시간</span></div>
+          <div class="row reveal"><span class="n">$</span><span class="t">스토리지</span><span class="d">RA3는 <b>RMS를 GB-month 별도</b> (컴퓨트와 분리)</span></div>
+          <div class="row reveal"><span class="n">$</span><span class="t">Spectrum</span><span class="d">S3 스캔 <b>$5/TB</b> · Serverless는 RPU 포함, RA3는 별도</span></div>
+          <div class="row reveal"><span class="n">0</span><span class="t">무료</span><span class="d">스냅샷 백업(프로비저닝 용량까지) · S3↔Redshift 전송 · 동시성 스케일링 24h당 1h</span></div>
         </div>
-        <div class="sub reveal"><span class="hl">"키는 코드보다 바꾸기 어렵다"</span> — DynamoDB 설계의 무게중심.</div>
       </div>
     </section>
 
-    <!-- 14. 면접 답변 -->
+    <!-- 12. 면접 답변 -->
     <section class="slide" data-sec="면접 답변">
       <div class="buf">
         <div class="s-head reveal"><span class="hash">$</span><h2>면접에서 이렇게 답하라</h2></div>
         <div class="statement reveal" style="font-size:52px; line-height:1.45;">
-          "<span class="em">액세스 패턴 먼저</span>, 그에 맞춰 PK/SK.<br />
-          PK는 <span class="em">고카디널리티</span>, 여러 엔티티는 <span class="em">싱글테이블 오버로딩</span>,<br />
-          못 푸는 조회는 <span class="em">GSI</span>(sparse · 좁은 프로젝션)."
+          “<span class="em">컬럼형 + MPP</span>로 대규모 집계를 빠르게.<br />
+          <span class="em">정렬키</span>는 zone map으로 읽을 양을 줄이고,<br />
+          <span class="em">분산키</span>는 코로케이션으로 노드 간 재분배를 없앤다.”
         </div>
-        <div class="sub reveal">운영 사고의 대부분은 <span class="hl">핫 파티션</span> — 단일 파티션 한계(≈3,000/1,000)를 한 키에 몰지 마라. <span class="hl">write sharding</span>으로 흩뿌리고 읽기 fan-out과 트레이드오프.</div>
+        <div class="sub reveal">선택은 <span class="hl">‘가끔 애드혹(Athena) vs 반복 BI(Redshift)’</span>. 둘은 Glue Catalog 공유 → Spectrum 레이크하우스.</div>
       </div>
     </section>
 
-    <!-- 15. CLOSING -->
+    <!-- 13. CLOSING -->
     <section class="slide closing" data-sec="end">
       <div class="buf">
         <div class="prompt reveal">$ git log --oneline · 다음 주제 →</div>
         <h2 class="reveal">한 입 끝.<br />원문으로 더 깊게.</h2>
         <div class="links">
-          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/DynamoDB">DynamoDB.md</a></div>
-          <div class="reveal"><span class="lead">관련 →</span> <a href="../../database/AWS-데이터-분석-스택">AWS 데이터 분석 스택</a> · <a href="../../database/CDC">CDC</a> · <a href="../../database/샤딩과-레플리카">샤딩과 레플리카</a></div>
+          <div class="reveal"><span class="lead">원문 자세히 읽기 →</span> <a href="../../database/Redshift-데이터-웨어하우스">Redshift — 데이터 웨어하우스.md</a></div>
+          <div class="reveal"><span class="lead">관련 →</span> <a href="../../database/AWS-데이터-분석-스택">AWS 데이터 분석 스택</a> · <a href="../../database/Athena와-Glue">Athena와 Glue</a></div>
         </div>
       </div>
     </section>

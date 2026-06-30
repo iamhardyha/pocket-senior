@@ -90,6 +90,14 @@
     "collapsed": false,
     "items": [
       {
+        "text": "AWS 데이터 분석 스택 한눈에 — 뭘 언제 쓰고 어떻게 엮나",
+        "link": "/database/AWS-데이터-분석-스택"
+      },
+      {
+        "text": "Athena + Glue — S3 데이터를 서버 없이 SQL로 분석하기",
+        "link": "/database/Athena와-Glue"
+      },
+      {
         "text": "AWS Aurora 업그레이드",
         "link": "/database/Aurora-업그레이드"
       },
@@ -98,12 +106,16 @@
         "link": "/database/CDC"
       },
       {
-        "text": "DynamoDB",
+        "text": "DynamoDB — 싱글테이블·키설계·핫파티션",
         "link": "/database/DynamoDB"
       },
       {
         "text": "N+1 문제와 조회 최적화",
         "link": "/database/N+1과-조회-최적화"
+      },
+      {
+        "text": "Redshift — 데이터 웨어하우스",
+        "link": "/database/Redshift-데이터-웨어하우스"
       },
       {
         "text": "글로벌 서비스 운영 중 DB 마이그레이션",
